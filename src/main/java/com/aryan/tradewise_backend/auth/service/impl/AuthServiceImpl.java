@@ -38,7 +38,7 @@ public class AuthServiceImpl implements AuthService {
                 .status(Status.ACTIVE)
                 .provider(Provider.LOCAL)
                 .build();
-
+        // save to database
         User savedUser = userRepository.save(user);
 
         RegisterResponse response = new RegisterResponse();
