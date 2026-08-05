@@ -4,8 +4,10 @@ import com.aryan.tradewise_backend.user.enums.Provider;
 import com.aryan.tradewise_backend.user.enums.Role;
 import com.aryan.tradewise_backend.user.enums.Status;
 import jakarta.persistence.*;
-import jakarta.validation.constraints.NotBlank;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -14,21 +16,27 @@ import java.time.LocalDateTime;
 
 @Getter
 @Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @Entity
-@Table(name="users")
+@Table(name = "users")
 public class User {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private long id;
+    private Long id;
 
-    @NotBlank
-    private String name;
+    @Column(nullable = false)
+    private String firstName;
 
+    @Column(nullable = false)
     private String lastName;
-    @Column(nullable = false, unique=true)
+
+    @Column(nullable = false, unique = true)
     private String email;
 
-    @Column(nullable=false)
+    @Column(nullable = false)
     private String password;
 
     @Enumerated(EnumType.STRING)
@@ -44,11 +52,10 @@ public class User {
     private Status status;
 
     @CreationTimestamp
-    @Column(nullable=false,updatable=false)
+    @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @UpdateTimestamp
-    @Column(nullable=false,updatable=false)
+    @Column(nullable = false)
     private LocalDateTime updatedAt;
-
 }
