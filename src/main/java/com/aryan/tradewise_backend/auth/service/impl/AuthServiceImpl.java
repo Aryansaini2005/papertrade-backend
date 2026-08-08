@@ -3,6 +3,7 @@ package com.aryan.tradewise_backend.auth.service.impl;
 import com.aryan.tradewise_backend.auth.dto.RegisterRequest;
 import com.aryan.tradewise_backend.auth.dto.RegisterResponse;
 import com.aryan.tradewise_backend.auth.service.AuthService;
+import com.aryan.tradewise_backend.common.exception.EmailAlreadyExistsException;
 import com.aryan.tradewise_backend.user.entity.User;
 import com.aryan.tradewise_backend.user.enums.Provider;
 import com.aryan.tradewise_backend.user.enums.Role;
@@ -30,7 +31,7 @@ public class AuthServiceImpl implements AuthService {
     public RegisterResponse register(RegisterRequest request){
 
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new RuntimeException("An account with this email already exists.");
+            throw new EmailAlreadyExistsException("An account with this email already exists.");
         }
 
         User user = User.builder()
