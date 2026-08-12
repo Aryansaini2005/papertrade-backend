@@ -6,6 +6,7 @@ import com.aryan.tradewise_backend.auth.dto.RegisterRequest;
 import com.aryan.tradewise_backend.auth.dto.RegisterResponse;
 import com.aryan.tradewise_backend.auth.service.AuthService;
 import com.aryan.tradewise_backend.common.exception.EmailAlreadyExistsException;
+import com.aryan.tradewise_backend.common.exception.InvalidCredentialsException;
 import com.aryan.tradewise_backend.security.JwtService;
 import com.aryan.tradewise_backend.user.entity.User;
 import com.aryan.tradewise_backend.user.enums.Provider;
@@ -67,7 +68,7 @@ public class AuthServiceImpl implements AuthService {
                 userRepository.findByEmail(request.getEmail());
 
         if (userOptional.isEmpty()) {
-            throw new RuntimeException("Invalid email or password");
+            throw new InvalidCredentialsException("Invalid email or password");
         }
 
         User user = userOptional.get();

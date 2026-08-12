@@ -3,6 +3,8 @@ package com.aryan.tradewise_backend.security;
 import com.aryan.tradewise_backend.user.entity.User;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
@@ -12,15 +14,20 @@ import java.util.Date;
 @Service
 public class JwtService {
 
-    private final String secretKey =
-            "TradeWiseDevelopmentSecretKey12345678901234567890";
+    @Value("${jwt.secret}")
+    private String secretKey;
 
-    private final long expirationTime = 15 * 60 * 1000;
+    @Value("${jwt.expiration}")
+    private long expirationTime;
 
-    private final SecretKey signingKey =
-            Keys.hmacShaKeyFor(
-                    secretKey.getBytes(StandardCharsets.UTF_8)
-            );
+    private SecretKey signingKey;
+
+    @PostConstruct
+    public void init() {
+        signingKey = Keys.hmacShaKeyFor(
+                secretKey.getBytes(StandardCharsets.UTF_8)
+        );
+    }
 
     public String generateToken(User user) {
 
