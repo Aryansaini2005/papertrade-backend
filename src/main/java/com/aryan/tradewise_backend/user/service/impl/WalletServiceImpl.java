@@ -1,12 +1,15 @@
 package com.aryan.tradewise_backend.user.service.impl;
 
 import com.aryan.tradewise_backend.security.CurrentUserService;
+import com.aryan.tradewise_backend.user.dto.WalletResponse;
 import com.aryan.tradewise_backend.user.entity.User;
 import com.aryan.tradewise_backend.user.entity.Wallet;
 import com.aryan.tradewise_backend.user.repository.UserRepository;
 import com.aryan.tradewise_backend.user.repository.WalletRepository;
 import com.aryan.tradewise_backend.user.service.WalletService;
 import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
 
 @Service
 public class WalletServiceImpl implements WalletService {
@@ -26,7 +29,7 @@ public class WalletServiceImpl implements WalletService {
     }
 
     @Override
-    public Wallet getMyWallet() {
+    public WalletResponse getMyWallet() {
 
         String email = currentUserService.getCurrentUserEmail();
 
@@ -34,8 +37,19 @@ public class WalletServiceImpl implements WalletService {
                 .orElseThrow(() ->
                         new RuntimeException("User not found"));
 
-        return walletRepository.findByUser(user)
+        Wallet wallet = walletRepository.findByUser(user)
                 .orElseThrow(() ->
                         new RuntimeException("Wallet not found"));
+
+        BigDecimal availableBalance =
+                wallet.getBalance().subtract(wallet.getLockedBalance());
+
+        return WalletResponse.builder()
+                .id(wallet.getId())
+                .balance(wallet.getBalance())
+                .lockedBalance(wallet.getLockedBalance())
+                .availableBalance(availableBalance)
+                .currency(wallet.getCurrency())
+                .build();
     }
 }

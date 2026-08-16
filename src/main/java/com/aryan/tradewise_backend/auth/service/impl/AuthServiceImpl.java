@@ -9,13 +9,17 @@ import com.aryan.tradewise_backend.common.exception.EmailAlreadyExistsException;
 import com.aryan.tradewise_backend.common.exception.InvalidCredentialsException;
 import com.aryan.tradewise_backend.security.JwtService;
 import com.aryan.tradewise_backend.user.entity.User;
+import com.aryan.tradewise_backend.user.entity.Wallet;
 import com.aryan.tradewise_backend.user.enums.Provider;
 import com.aryan.tradewise_backend.user.enums.Role;
 import com.aryan.tradewise_backend.user.enums.Status;
 import com.aryan.tradewise_backend.user.repository.UserRepository;
+import com.aryan.tradewise_backend.user.repository.WalletRepository;
+import jakarta.transaction.Transactional;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.Optional;
 
 
@@ -25,16 +29,20 @@ public class AuthServiceImpl implements AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final WalletRepository walletRepository;
 
     public AuthServiceImpl(UserRepository userRepository,
                            PasswordEncoder passwordEncoder,
-                           JwtService jwtService) {
+                           JwtService jwtService,
+                           WalletRepository walletRepository) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.walletRepository = walletRepository;
     }
 
     @Override
+    @Transactional
     public RegisterResponse register(RegisterRequest request){
 
         if (userRepository.existsByEmail(request.getEmail())) {
@@ -52,6 +60,15 @@ public class AuthServiceImpl implements AuthService {
                 .build();
         // save to database
         User savedUser = userRepository.save(user);
+
+        Wallet wallet = Wallet.builder()
+                .user(savedUser)
+                .balance(BigDecimal.ZERO)
+                .lockedBalance(BigDecimal.ZERO)
+                .currency("INR")
+                .build();
+
+        walletRepository.save(wallet);
 
         RegisterResponse response = new RegisterResponse();
         response.setFirstName(savedUser.getFirstName());
