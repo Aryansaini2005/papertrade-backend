@@ -12,8 +12,8 @@ import java.math.BigDecimal;
 public class WalletResponse {
 
     private Long id;
-    private BigDecimal balance;
-    private BigDecimal lockedBalance;
+    private BigDecimal dailyLimit;
     private BigDecimal availableBalance;
+    private BigDecimal lockedBalance;
     private String currency;
 }

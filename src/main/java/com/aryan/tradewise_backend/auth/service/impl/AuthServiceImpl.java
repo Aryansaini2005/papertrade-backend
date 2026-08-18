@@ -20,6 +20,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Optional;
 
 
@@ -63,9 +64,11 @@ public class AuthServiceImpl implements AuthService {
 
         Wallet wallet = Wallet.builder()
                 .user(savedUser)
-                .balance(BigDecimal.ZERO)
+                .dailyLimit(new BigDecimal("100000.00"))
+                .availableBalance(new BigDecimal("100000.00"))
                 .lockedBalance(BigDecimal.ZERO)
                 .currency("INR")
+                .lastResetDate(LocalDate.now())
                 .build();
 
         walletRepository.save(wallet);
@@ -81,6 +84,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public LoginResponse login(LoginRequest request) {
 
+
         Optional<User> userOptional =
                 userRepository.findByEmail(request.getEmail());
 
@@ -94,7 +98,7 @@ public class AuthServiceImpl implements AuthService {
                 request.getPassword(),
                 user.getPassword())) {
 
-            throw new RuntimeException("Invalid email or password");
+            throw new InvalidCredentialsException("Invalid email or password");
         }
 
         String token = jwtService.generateToken(user);
