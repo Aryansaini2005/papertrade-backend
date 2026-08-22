@@ -9,6 +9,9 @@ import com.aryan.tradewise_backend.user.repository.WalletRepository;
 import com.aryan.tradewise_backend.user.service.WalletService;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+
 @Service
 public class WalletServiceImpl implements WalletService {
 
@@ -39,6 +42,8 @@ public class WalletServiceImpl implements WalletService {
                 .orElseThrow(() ->
                         new RuntimeException("Wallet not found"));
 
+        resetIfNeeded(wallet);
+
         return WalletResponse.builder()
                 .id(wallet.getId())
                 .dailyLimit(wallet.getDailyLimit())
@@ -46,5 +51,20 @@ public class WalletServiceImpl implements WalletService {
                 .lockedBalance(wallet.getLockedBalance())
                 .currency(wallet.getCurrency())
                 .build();
+    }
+
+    @Override
+    public void resetIfNeeded(Wallet wallet) {
+
+        LocalDate today = LocalDate.now();
+
+        if (wallet.getLastResetDate().isBefore(today)) {
+
+            wallet.setAvailableBalance(wallet.getDailyLimit());
+            wallet.setLockedBalance(BigDecimal.ZERO);
+            wallet.setLastResetDate(today);
+
+            walletRepository.save(wallet);
+        }
     }
 }
