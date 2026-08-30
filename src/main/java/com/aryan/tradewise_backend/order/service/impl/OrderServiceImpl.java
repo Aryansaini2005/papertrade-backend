@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Service
 public class OrderServiceImpl implements OrderService {
@@ -97,6 +98,86 @@ public class OrderServiceImpl implements OrderService {
                 .price(asset.getCurrentPrice())
                 .status(OrderStatus.PENDING)
                 .build();
+
+        Order savedOrder = orderRepository.save(order);
+
+        return OrderResponse.builder()
+                .id(savedOrder.getId())
+                .assetSymbol(savedOrder.getAsset().getSymbol())
+                .orderType(savedOrder.getOrderType())
+                .quantity(savedOrder.getQuantity())
+                .price(savedOrder.getPrice())
+                .status(savedOrder.getStatus())
+                .createdAt(savedOrder.getCreatedAt())
+                .build();
+    }
+    @Override
+    public List<OrderResponse> getMyOrders() {
+
+        String email = currentUserService.getCurrentUserEmail();
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() ->
+                        new RuntimeException("User not found"));
+
+        return orderRepository
+                .findByUserOrderByCreatedAtDesc(user)
+                .stream()
+                .map(order -> OrderResponse.builder()
+                        .id(order.getId())
+                        .assetSymbol(order.getAsset().getSymbol())
+                        .orderType(order.getOrderType())
+                        .quantity(order.getQuantity())
+                        .price(order.getPrice())
+                        .status(order.getStatus())
+                        .createdAt(order.getCreatedAt())
+                        .build())
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse cancelOrder(Long orderId) {
+
+        String email = currentUserService.getCurrentUserEmail();
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() ->
+                        new RuntimeException("User not found"));
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() ->
+                        new RuntimeException("Order not found"));
+
+        if (!order.getUser().getId().equals(user.getId())) {
+            throw new RuntimeException("You are not authorized to cancel this order");
+        }
+        if (order.getStatus() != OrderStatus.PENDING) {
+            throw new RuntimeException("Only pending orders can be cancelled");
+        }
+
+        if (order.getOrderType() == OrderType.BUY) {
+
+            BigDecimal orderAmount = order.getPrice()
+                    .multiply(order.getQuantity());
+
+            Wallet wallet = walletRepository.findByUser(user)
+                    .orElseThrow(() ->
+                            new RuntimeException("Wallet not found"));
+
+            wallet.setLockedBalance(
+                    wallet.getLockedBalance()
+                            .subtract(orderAmount)
+            );
+
+            wallet.setAvailableBalance(
+                    wallet.getAvailableBalance()
+                            .add(orderAmount)
+            );
+
+            walletRepository.save(wallet);
+        }
+        order.setStatus(OrderStatus.CANCELLED);
 
         Order savedOrder = orderRepository.save(order);
 
