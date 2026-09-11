@@ -46,14 +46,18 @@ public class PortfolioServiceImpl implements PortfolioService {
                     BigDecimal currentPrice =
                             portfolio.getAsset().getCurrentPrice();
 
+                    BigDecimal totalQuantity =
+                            portfolio.getAvailableQuantity()
+                                    .add(portfolio.getLockedQuantity());
+
                     BigDecimal currentValue =
-                            portfolio.getQuantity()
-                                    .multiply(currentPrice);
+                            totalQuantity.multiply(currentPrice);
 
                     return PortfolioResponse.builder()
                             .assetSymbol(portfolio.getAsset().getSymbol())
                             .assetName(portfolio.getAsset().getName())
-                            .quantity(portfolio.getQuantity())
+                            .availableQuantity(portfolio.getAvailableQuantity())
+                            .lockedQuantity(portfolio.getLockedQuantity())
                             .currentPrice(currentPrice)
                             .currentValue(currentValue)
                             .build();

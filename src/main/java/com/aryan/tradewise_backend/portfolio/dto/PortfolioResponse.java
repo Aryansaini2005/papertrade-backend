@@ -13,7 +13,9 @@ public class PortfolioResponse {
 
     private String assetName;
 
-    private BigDecimal quantity;
+    private BigDecimal availableQuantity;
+
+    private BigDecimal lockedQuantity;
 
     private BigDecimal currentPrice;
 

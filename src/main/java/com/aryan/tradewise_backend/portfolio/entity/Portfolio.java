@@ -37,7 +37,10 @@ public class Portfolio {
     private Asset asset;
 
     @Column(nullable = false, precision = 19, scale = 4)
-    private BigDecimal quantity;
+    private BigDecimal availableQuantity;
+
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal lockedQuantity;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;

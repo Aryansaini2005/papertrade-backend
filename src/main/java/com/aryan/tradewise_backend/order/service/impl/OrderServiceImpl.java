@@ -9,6 +9,8 @@ import com.aryan.tradewise_backend.order.enums.OrderStatus;
 import com.aryan.tradewise_backend.order.enums.OrderType;
 import com.aryan.tradewise_backend.order.repository.OrderRepository;
 import com.aryan.tradewise_backend.order.service.OrderService;
+import com.aryan.tradewise_backend.portfolio.entity.Portfolio;
+import com.aryan.tradewise_backend.portfolio.repository.PortfolioRepository;
 import com.aryan.tradewise_backend.security.CurrentUserService;
 import com.aryan.tradewise_backend.user.entity.User;
 import com.aryan.tradewise_backend.user.entity.Wallet;
@@ -28,19 +30,22 @@ public class OrderServiceImpl implements OrderService {
     private final UserRepository userRepository;
     private final WalletRepository walletRepository;
     private final CurrentUserService currentUserService;
+    private final PortfolioRepository portfolioRepository;
 
     public OrderServiceImpl(
             OrderRepository orderRepository,
             AssetRepository assetRepository,
             UserRepository userRepository,
             WalletRepository walletRepository,
-            CurrentUserService currentUserService) {
+            CurrentUserService currentUserService,
+            PortfolioRepository portfolioRepository) {
 
         this.orderRepository = orderRepository;
         this.assetRepository = assetRepository;
         this.userRepository = userRepository;
         this.walletRepository = walletRepository;
         this.currentUserService = currentUserService;
+        this.portfolioRepository = portfolioRepository;
     }
 
     @Transactional
@@ -88,6 +93,34 @@ public class OrderServiceImpl implements OrderService {
             );
 
             walletRepository.save(wallet);
+        }
+
+        else if (request.getOrderType() == OrderType.SELL) {
+
+            Portfolio portfolio = portfolioRepository
+                    .findByUserAndAsset(user, asset)
+                    .orElseThrow(() ->
+                            new RuntimeException("You do not own this asset"));
+
+            if (portfolio.getAvailableQuantity()
+                    .compareTo(request.getQuantity()) < 0) {
+
+                throw new RuntimeException(
+                        "Insufficient available quantity"
+                );
+            }
+
+            portfolio.setAvailableQuantity(
+                    portfolio.getAvailableQuantity()
+                            .subtract(request.getQuantity())
+            );
+
+            portfolio.setLockedQuantity(
+                    portfolio.getLockedQuantity()
+                            .add(request.getQuantity())
+            );
+
+            portfolioRepository.save(portfolio);
         }
 
         Order order = Order.builder()
@@ -177,7 +210,140 @@ public class OrderServiceImpl implements OrderService {
 
             walletRepository.save(wallet);
         }
+
+        else if (order.getOrderType() == OrderType.SELL) {
+
+            Portfolio portfolio = portfolioRepository
+                    .findByUserAndAsset(
+                            order.getUser(),
+                            order.getAsset()
+                    )
+                    .orElseThrow(() ->
+                            new RuntimeException("Portfolio holding not found"));
+
+            portfolio.setLockedQuantity(
+                    portfolio.getLockedQuantity()
+                            .subtract(order.getQuantity())
+            );
+
+            portfolio.setAvailableQuantity(
+                    portfolio.getAvailableQuantity()
+                            .add(order.getQuantity())
+            );
+
+            portfolioRepository.save(portfolio);
+        }
+
         order.setStatus(OrderStatus.CANCELLED);
+
+        Order savedOrder = orderRepository.save(order);
+
+        return OrderResponse.builder()
+                .id(savedOrder.getId())
+                .assetSymbol(savedOrder.getAsset().getSymbol())
+                .orderType(savedOrder.getOrderType())
+                .quantity(savedOrder.getQuantity())
+                .price(savedOrder.getPrice())
+                .status(savedOrder.getStatus())
+                .createdAt(savedOrder.getCreatedAt())
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse executeOrder(Long orderId) {
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() ->
+                        new RuntimeException("Order not found"));
+
+        if (order.getStatus() != OrderStatus.PENDING) {
+            throw new RuntimeException("Only pending orders can be executed");
+        }
+
+        if (order.getOrderType() == OrderType.BUY) {
+
+            Wallet wallet = walletRepository.findByUser(order.getUser())
+                    .orElseThrow(() ->
+                            new RuntimeException("Wallet not found"));
+
+            BigDecimal orderAmount = order.getPrice()
+                    .multiply(order.getQuantity());
+
+            // Remove money from locked balance
+            wallet.setLockedBalance(
+                    wallet.getLockedBalance()
+                            .subtract(orderAmount)
+            );
+
+            walletRepository.save(wallet);
+
+            Portfolio portfolio = portfolioRepository
+                    .findByUserAndAsset(order.getUser(), order.getAsset())
+                    .orElse(null);
+
+            if (portfolio != null) {
+
+                portfolio.setAvailableQuantity(
+                        portfolio.getAvailableQuantity()
+                                .add(order.getQuantity())
+                );
+
+            } else {
+
+                portfolio = Portfolio.builder()
+                        .user(order.getUser())
+                        .asset(order.getAsset())
+                        .availableQuantity(order.getQuantity())
+                        .lockedQuantity(BigDecimal.ZERO)
+                        .build();
+            }
+
+            portfolioRepository.save(portfolio);
+        }
+
+        else if (order.getOrderType() == OrderType.SELL) {
+
+            Portfolio portfolio = portfolioRepository
+                    .findByUserAndAsset(
+                            order.getUser(),
+                            order.getAsset()
+                    )
+                    .orElseThrow(() ->
+                            new RuntimeException("Portfolio holding not found"));
+
+            if (portfolio.getLockedQuantity()
+                    .compareTo(order.getQuantity()) < 0) {
+
+                throw new RuntimeException(
+                        "Insufficient locked quantity"
+                );
+            }
+
+            portfolio.setLockedQuantity(
+                    portfolio.getLockedQuantity()
+                            .subtract(order.getQuantity())
+            );
+
+            portfolioRepository.save(portfolio);
+
+            Wallet wallet = walletRepository
+                    .findByUser(order.getUser())
+                    .orElseThrow(() ->
+                            new RuntimeException("Wallet not found"));
+
+            BigDecimal orderAmount = order.getPrice()
+                    .multiply(order.getQuantity());
+
+            wallet.setAvailableBalance(
+                    wallet.getAvailableBalance()
+                            .add(orderAmount)
+            );
+
+            walletRepository.save(wallet);
+        }
+
+        order.setStatus(OrderStatus.EXECUTED);
 
         Order savedOrder = orderRepository.save(order);
 

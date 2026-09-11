@@ -4,6 +4,7 @@ import com.aryan.tradewise_backend.order.dto.CreateOrderRequest;
 import com.aryan.tradewise_backend.order.dto.OrderResponse;
 import com.aryan.tradewise_backend.order.service.OrderService;
 import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -36,5 +37,13 @@ public class OrderController {
             @PathVariable Long orderId) {
 
         return orderService.cancelOrder(orderId);
+    }
+
+    @PostMapping("/{orderId}/execute")
+    @PreAuthorize("hasRole('ADMIN')")
+    public OrderResponse executeOrder(
+            @PathVariable Long orderId) {
+
+        return orderService.executeOrder(orderId);
     }
 }
