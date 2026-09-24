@@ -12,6 +12,8 @@ import com.aryan.tradewise_backend.order.service.OrderService;
 import com.aryan.tradewise_backend.portfolio.entity.Portfolio;
 import com.aryan.tradewise_backend.portfolio.repository.PortfolioRepository;
 import com.aryan.tradewise_backend.security.CurrentUserService;
+import com.aryan.tradewise_backend.trade.entity.Trade;
+import com.aryan.tradewise_backend.trade.repository.TradeRepository;
 import com.aryan.tradewise_backend.user.entity.User;
 import com.aryan.tradewise_backend.user.entity.Wallet;
 import com.aryan.tradewise_backend.user.repository.UserRepository;
@@ -31,6 +33,7 @@ public class OrderServiceImpl implements OrderService {
     private final WalletRepository walletRepository;
     private final CurrentUserService currentUserService;
     private final PortfolioRepository portfolioRepository;
+    private final TradeRepository tradeRepository;
 
     public OrderServiceImpl(
             OrderRepository orderRepository,
@@ -38,7 +41,8 @@ public class OrderServiceImpl implements OrderService {
             UserRepository userRepository,
             WalletRepository walletRepository,
             CurrentUserService currentUserService,
-            PortfolioRepository portfolioRepository) {
+            PortfolioRepository portfolioRepository,
+            TradeRepository tradeRepository) {
 
         this.orderRepository = orderRepository;
         this.assetRepository = assetRepository;
@@ -46,6 +50,7 @@ public class OrderServiceImpl implements OrderService {
         this.walletRepository = walletRepository;
         this.currentUserService = currentUserService;
         this.portfolioRepository = portfolioRepository;
+        this.tradeRepository = tradeRepository;
     }
 
     @Transactional
@@ -342,6 +347,17 @@ public class OrderServiceImpl implements OrderService {
 
             walletRepository.save(wallet);
         }
+
+        Trade trade = Trade.builder()
+                .user(order.getUser())
+                .order(order)
+                .asset(order.getAsset())
+                .orderType(order.getOrderType())
+                .quantity(order.getQuantity())
+                .executionPrice(order.getPrice())
+                .build();
+
+        tradeRepository.save(trade);
 
         order.setStatus(OrderStatus.EXECUTED);
 
