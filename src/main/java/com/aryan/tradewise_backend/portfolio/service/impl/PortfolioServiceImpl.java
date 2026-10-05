@@ -1,5 +1,6 @@
 package com.aryan.tradewise_backend.portfolio.service.impl;
 
+import com.aryan.tradewise_backend.market.service.MarketPriceService;
 import com.aryan.tradewise_backend.portfolio.dto.PortfolioResponse;
 import com.aryan.tradewise_backend.portfolio.entity.Portfolio;
 import com.aryan.tradewise_backend.portfolio.repository.PortfolioRepository;
@@ -18,15 +19,18 @@ public class PortfolioServiceImpl implements PortfolioService {
     private final PortfolioRepository portfolioRepository;
     private final CurrentUserService currentUserService;
     private final UserRepository userRepository;
+    private final MarketPriceService marketPriceService;
 
     public PortfolioServiceImpl(
             PortfolioRepository portfolioRepository,
             CurrentUserService currentUserService,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            MarketPriceService marketPriceService) {
 
         this.portfolioRepository = portfolioRepository;
         this.currentUserService = currentUserService;
         this.userRepository = userRepository;
+        this.marketPriceService = marketPriceService;
     }
 
     @Override
@@ -44,14 +48,19 @@ public class PortfolioServiceImpl implements PortfolioService {
                 .map(portfolio -> {
 
                     BigDecimal currentPrice =
-                            portfolio.getAsset().getCurrentPrice();
+                            marketPriceService.getPrice(
+                                    portfolio.getAsset().getSymbol()
+                            );
 
                     BigDecimal totalQuantity =
                             portfolio.getAvailableQuantity()
                                     .add(portfolio.getLockedQuantity());
 
-                    BigDecimal currentValue =
-                            totalQuantity.multiply(currentPrice);
+                    BigDecimal currentValue = BigDecimal.ZERO;
+
+                    if (currentPrice != null) {
+                        currentValue = totalQuantity.multiply(currentPrice);
+                    }
 
                     return PortfolioResponse.builder()
                             .assetSymbol(portfolio.getAsset().getSymbol())

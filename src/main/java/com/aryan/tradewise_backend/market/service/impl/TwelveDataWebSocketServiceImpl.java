@@ -2,11 +2,13 @@ package com.aryan.tradewise_backend.market.service.impl;
 
 import com.aryan.tradewise_backend.market.config.TwelveDataConfig;
 import com.aryan.tradewise_backend.market.dto.TwelveDataPriceResponse;
+import com.aryan.tradewise_backend.market.service.MarketPriceService;
 import com.aryan.tradewise_backend.market.service.TwelveDataWebSocketService;
 import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
@@ -18,13 +20,16 @@ public class TwelveDataWebSocketServiceImpl
 
     private final TwelveDataConfig config;
     private final ObjectMapper objectMapper;
+    private final MarketPriceService marketPriceService;
 
     public TwelveDataWebSocketServiceImpl(
             TwelveDataConfig config,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            MarketPriceService marketPriceService) {
 
         this.config = config;
         this.objectMapper = objectMapper;
+        this.marketPriceService = marketPriceService;
 
         System.out.println("TwelveDataWebSocketServiceImpl CREATED");
     }
@@ -102,6 +107,11 @@ public class TwelveDataWebSocketServiceImpl
                                     );
 
                             if ("price".equals(response.getEvent())) {
+
+                                marketPriceService.updatePrice(
+                                        response.getSymbol(),
+                                        BigDecimal.valueOf(response.getPrice())
+                                );
 
                                 System.out.println(
                                         "Symbol: " + response.getSymbol()

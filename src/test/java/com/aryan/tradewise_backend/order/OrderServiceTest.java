@@ -2,6 +2,7 @@ package com.aryan.tradewise_backend.order;
 
 import com.aryan.tradewise_backend.market.entity.Asset;
 import com.aryan.tradewise_backend.market.repository.AssetRepository;
+import com.aryan.tradewise_backend.market.service.MarketPriceService;
 import com.aryan.tradewise_backend.order.dto.CreateOrderRequest;
 import com.aryan.tradewise_backend.order.dto.OrderResponse;
 import com.aryan.tradewise_backend.order.entity.Order;
@@ -18,8 +19,8 @@ import com.aryan.tradewise_backend.user.entity.User;
 import com.aryan.tradewise_backend.user.entity.Wallet;
 import com.aryan.tradewise_backend.user.repository.UserRepository;
 import com.aryan.tradewise_backend.user.repository.WalletRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -30,27 +31,43 @@ import static org.mockito.Mockito.*;
 
 class OrderServiceTest {
 
-    @Test
-    void shouldCreateBuyOrderSuccessfully() {
+    private OrderRepository orderRepository;
+    private AssetRepository assetRepository;
+    private UserRepository userRepository;
+    private WalletRepository walletRepository;
+    private CurrentUserService currentUserService;
+    private PortfolioRepository portfolioRepository;
+    private TradeRepository tradeRepository;
+    private MarketPriceService marketPriceService;
 
-        // Arrange
-        OrderRepository orderRepository = mock(OrderRepository.class);
-        AssetRepository assetRepository = mock(AssetRepository.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        WalletRepository walletRepository = mock(WalletRepository.class);
-        CurrentUserService currentUserService = mock(CurrentUserService.class);
-        PortfolioRepository portfolioRepository = mock(PortfolioRepository.class);
-        TradeRepository tradeRepository = mock(TradeRepository.class);
+    private OrderServiceImpl orderService;
 
-        OrderServiceImpl orderService = new OrderServiceImpl(
+    @BeforeEach
+    void setUp() {
+
+        orderRepository = mock(OrderRepository.class);
+        assetRepository = mock(AssetRepository.class);
+        userRepository = mock(UserRepository.class);
+        walletRepository = mock(WalletRepository.class);
+        currentUserService = mock(CurrentUserService.class);
+        portfolioRepository = mock(PortfolioRepository.class);
+        tradeRepository = mock(TradeRepository.class);
+        marketPriceService = mock(MarketPriceService.class);
+
+        orderService = new OrderServiceImpl(
                 orderRepository,
                 assetRepository,
                 userRepository,
                 walletRepository,
                 currentUserService,
                 portfolioRepository,
-                tradeRepository
+                tradeRepository,
+                marketPriceService
         );
+    }
+
+    @Test
+    void shouldCreateBuyOrderSuccessfully() {
 
         User user = new User();
 
@@ -93,10 +110,8 @@ class OrderServiceTest {
         when(orderRepository.save(any(Order.class)))
                 .thenReturn(savedOrder);
 
-        // Act
         OrderResponse response = orderService.createOrder(request);
 
-        // Assert
         assertNotNull(response);
         assertEquals(1L, response.getId());
         assertEquals("AAPL", response.getAssetSymbol());
@@ -121,25 +136,6 @@ class OrderServiceTest {
 
     @Test
     void shouldRejectBuyOrderWhenBalanceIsInsufficient() {
-
-        // Arrange
-        OrderRepository orderRepository = mock(OrderRepository.class);
-        AssetRepository assetRepository = mock(AssetRepository.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        WalletRepository walletRepository = mock(WalletRepository.class);
-        CurrentUserService currentUserService = mock(CurrentUserService.class);
-        PortfolioRepository portfolioRepository = mock(PortfolioRepository.class);
-        TradeRepository tradeRepository = mock(TradeRepository.class);
-
-        OrderServiceImpl orderService = new OrderServiceImpl(
-                orderRepository,
-                assetRepository,
-                userRepository,
-                walletRepository,
-                currentUserService,
-                portfolioRepository,
-                tradeRepository
-        );
 
         User user = new User();
 
@@ -169,7 +165,6 @@ class OrderServiceTest {
         when(walletRepository.findByUser(user))
                 .thenReturn(Optional.of(wallet));
 
-        // Act + Assert
         RuntimeException exception = assertThrows(
                 RuntimeException.class,
                 () -> orderService.createOrder(request)
@@ -180,34 +175,12 @@ class OrderServiceTest {
                 exception.getMessage()
         );
 
-        // Order should never be saved
         verify(orderRepository, never()).save(any(Order.class));
-
-        // Wallet should not be modified/saved
         verify(walletRepository, never()).save(wallet);
     }
 
     @Test
     void shouldRejectOrderWhenAssetIsInactive() {
-
-        // Arrange
-        OrderRepository orderRepository = mock(OrderRepository.class);
-        AssetRepository assetRepository = mock(AssetRepository.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        WalletRepository walletRepository = mock(WalletRepository.class);
-        CurrentUserService currentUserService = mock(CurrentUserService.class);
-        PortfolioRepository portfolioRepository = mock(PortfolioRepository.class);
-        TradeRepository tradeRepository = mock(TradeRepository.class);
-
-        OrderServiceImpl orderService = new OrderServiceImpl(
-                orderRepository,
-                assetRepository,
-                userRepository,
-                walletRepository,
-                currentUserService,
-                portfolioRepository,
-                tradeRepository
-        );
 
         User user = new User();
 
@@ -230,7 +203,6 @@ class OrderServiceTest {
         when(assetRepository.findBySymbol("AAPL"))
                 .thenReturn(Optional.of(asset));
 
-        // Act + Assert
         RuntimeException exception = assertThrows(
                 RuntimeException.class,
                 () -> orderService.createOrder(request)
@@ -247,35 +219,23 @@ class OrderServiceTest {
     @Test
     void shouldCreateSellOrderSuccessfully() {
 
-        // Arrange
-        OrderRepository orderRepository = mock(OrderRepository.class);
-        AssetRepository assetRepository = mock(AssetRepository.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        WalletRepository walletRepository = mock(WalletRepository.class);
-        CurrentUserService currentUserService = mock(CurrentUserService.class);
-        PortfolioRepository portfolioRepository = mock(PortfolioRepository.class);
-        TradeRepository tradeRepository = mock(TradeRepository.class);
+        User user = User.builder()
+                .id(1L)
+                .email("test@gmail.com")
+                .build();
 
-        OrderServiceImpl orderService = new OrderServiceImpl(
-                orderRepository,
-                assetRepository,
-                userRepository,
-                walletRepository,
-                currentUserService,
-                portfolioRepository,
-                tradeRepository
-        );
+        Asset asset = Asset.builder()
+                .symbol("AAPL")
+                .name("AAPL")
+                .currentPrice(new BigDecimal("100"))
+                .active(true)
+                .build();
 
-        User user = new User();
-
-        Asset asset = new Asset();
-        asset.setSymbol("AAPL");
-        asset.setCurrentPrice(new BigDecimal("100"));
-        asset.setActive(true);
-
-        Wallet wallet = new Wallet();
-        wallet.setAvailableBalance(new BigDecimal("5000"));
-        wallet.setLockedBalance(BigDecimal.ZERO);
+        Wallet wallet = Wallet.builder()
+                .user(user)
+                .availableBalance(new BigDecimal("5000"))
+                .lockedBalance(BigDecimal.ZERO)
+                .build();
 
         Portfolio portfolio = Portfolio.builder()
                 .user(user)
@@ -317,10 +277,8 @@ class OrderServiceTest {
         when(orderRepository.save(any(Order.class)))
                 .thenReturn(savedOrder);
 
-        // Act
         OrderResponse response = orderService.createOrder(request);
 
-        // Assert
         assertNotNull(response);
         assertEquals(2L, response.getId());
         assertEquals("AAPL", response.getAssetSymbol());
@@ -345,25 +303,8 @@ class OrderServiceTest {
     @Test
     void shouldCancelBuyOrderSuccessfully() {
 
-        OrderRepository orderRepository = mock(OrderRepository.class);
-        AssetRepository assetRepository = mock(AssetRepository.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        WalletRepository walletRepository = mock(WalletRepository.class);
-        CurrentUserService currentUserService = mock(CurrentUserService.class);
-        PortfolioRepository portfolioRepository = mock(PortfolioRepository.class);
-        TradeRepository tradeRepository = mock(TradeRepository.class);
-
-        OrderServiceImpl orderService = new OrderServiceImpl(
-                orderRepository,
-                assetRepository,
-                userRepository,
-                walletRepository,
-                currentUserService,
-                portfolioRepository,
-                tradeRepository
-        );
-
         User user = User.builder()
+                .id(1L)
                 .email("test@gmail.com")
                 .build();
 
@@ -407,7 +348,10 @@ class OrderServiceTest {
 
         OrderResponse response = orderService.cancelOrder(1L);
 
-        assertEquals(OrderStatus.CANCELLED, order.getStatus());
+        assertEquals(
+                OrderStatus.CANCELLED,
+                order.getStatus()
+        );
 
         assertEquals(
                 new BigDecimal("10000"),
@@ -415,35 +359,21 @@ class OrderServiceTest {
         );
 
         assertEquals(
-                new BigDecimal("0"),
+                BigDecimal.ZERO,
                 wallet.getLockedBalance()
         );
 
-        assertEquals(OrderStatus.CANCELLED, response.getStatus());
+        assertEquals(
+                OrderStatus.CANCELLED,
+                response.getStatus()
+        );
     }
 
     @Test
     void shouldExecuteBuyOrderSuccessfully() {
 
-        OrderRepository orderRepository = mock(OrderRepository.class);
-        AssetRepository assetRepository = mock(AssetRepository.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        WalletRepository walletRepository = mock(WalletRepository.class);
-        CurrentUserService currentUserService = mock(CurrentUserService.class);
-        PortfolioRepository portfolioRepository = mock(PortfolioRepository.class);
-        TradeRepository tradeRepository = mock(TradeRepository.class);
-
-        OrderServiceImpl orderService = new OrderServiceImpl(
-                orderRepository,
-                assetRepository,
-                userRepository,
-                walletRepository,
-                currentUserService,
-                portfolioRepository,
-                tradeRepository
-        );
-
         User user = User.builder()
+                .id(1L)
                 .email("test@gmail.com")
                 .build();
 
@@ -479,6 +409,10 @@ class OrderServiceTest {
         when(portfolioRepository.findByUserAndAsset(user, asset))
                 .thenReturn(Optional.empty());
 
+        // IMPORTANT: live market price
+        when(marketPriceService.getPrice("TCS"))
+                .thenReturn(new BigDecimal("100"));
+
         when(portfolioRepository.save(any(Portfolio.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -490,21 +424,21 @@ class OrderServiceTest {
 
         OrderResponse response = orderService.executeOrder(3L);
 
-        // Order should be executed
-        assertEquals(OrderStatus.EXECUTED, order.getStatus());
+        assertEquals(
+                OrderStatus.EXECUTED,
+                order.getStatus()
+        );
 
-        // Locked money should be released
         assertEquals(
                 new BigDecimal("10000"),
                 wallet.getAvailableBalance()
         );
 
         assertEquals(
-                new BigDecimal("0"),
+                BigDecimal.ZERO,
                 wallet.getLockedBalance()
         );
 
-        // Response should show executed
         assertEquals(
                 OrderStatus.EXECUTED,
                 response.getStatus()
@@ -519,25 +453,8 @@ class OrderServiceTest {
     @Test
     void shouldExecuteSellOrderSuccessfully() {
 
-        OrderRepository orderRepository = mock(OrderRepository.class);
-        AssetRepository assetRepository = mock(AssetRepository.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        WalletRepository walletRepository = mock(WalletRepository.class);
-        CurrentUserService currentUserService = mock(CurrentUserService.class);
-        PortfolioRepository portfolioRepository = mock(PortfolioRepository.class);
-        TradeRepository tradeRepository = mock(TradeRepository.class);
-
-        OrderServiceImpl orderService = new OrderServiceImpl(
-                orderRepository,
-                assetRepository,
-                userRepository,
-                walletRepository,
-                currentUserService,
-                portfolioRepository,
-                tradeRepository
-        );
-
         User user = User.builder()
+                .id(1L)
                 .email("test@gmail.com")
                 .build();
 
@@ -551,7 +468,7 @@ class OrderServiceTest {
         Wallet wallet = Wallet.builder()
                 .user(user)
                 .availableBalance(new BigDecimal("5000"))
-                .lockedBalance(new BigDecimal("0"))
+                .lockedBalance(BigDecimal.ZERO)
                 .build();
 
         Portfolio portfolio = Portfolio.builder()
@@ -580,6 +497,10 @@ class OrderServiceTest {
         when(portfolioRepository.findByUserAndAsset(user, asset))
                 .thenReturn(Optional.of(portfolio));
 
+        // IMPORTANT: live market price
+        when(marketPriceService.getPrice("TCS"))
+                .thenReturn(new BigDecimal("100"));
+
         when(tradeRepository.save(any(Trade.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -588,36 +509,31 @@ class OrderServiceTest {
 
         OrderResponse response = orderService.executeOrder(4L);
 
-        // Order should be executed
         assertEquals(
                 OrderStatus.EXECUTED,
                 order.getStatus()
         );
 
-        // Locked shares should be removed
         assertEquals(
                 new BigDecimal("10"),
                 portfolio.getAvailableQuantity()
         );
 
         assertEquals(
-                new BigDecimal("0"),
+                BigDecimal.ZERO,
                 portfolio.getLockedQuantity()
         );
 
-        // Sale amount should be credited
         assertEquals(
                 new BigDecimal("6000"),
                 wallet.getAvailableBalance()
         );
 
-        // Locked balance should remain unchanged
         assertEquals(
-                new BigDecimal("0"),
+                BigDecimal.ZERO,
                 wallet.getLockedBalance()
         );
 
-        // Response should show executed
         assertEquals(
                 OrderStatus.EXECUTED,
                 response.getStatus()
@@ -632,25 +548,8 @@ class OrderServiceTest {
     @Test
     void shouldRejectExecutionOfCancelledOrder() {
 
-        OrderRepository orderRepository = mock(OrderRepository.class);
-        AssetRepository assetRepository = mock(AssetRepository.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        WalletRepository walletRepository = mock(WalletRepository.class);
-        CurrentUserService currentUserService = mock(CurrentUserService.class);
-        PortfolioRepository portfolioRepository = mock(PortfolioRepository.class);
-        TradeRepository tradeRepository = mock(TradeRepository.class);
-
-        OrderServiceImpl orderService = new OrderServiceImpl(
-                orderRepository,
-                assetRepository,
-                userRepository,
-                walletRepository,
-                currentUserService,
-                portfolioRepository,
-                tradeRepository
-        );
-
         User user = User.builder()
+                .id(1L)
                 .email("test@gmail.com")
                 .build();
 
@@ -693,29 +592,13 @@ class OrderServiceTest {
     @Test
     void shouldRejectCancellingAnotherUsersOrder() {
 
-        OrderRepository orderRepository = mock(OrderRepository.class);
-        AssetRepository assetRepository = mock(AssetRepository.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        WalletRepository walletRepository = mock(WalletRepository.class);
-        CurrentUserService currentUserService = mock(CurrentUserService.class);
-        PortfolioRepository portfolioRepository = mock(PortfolioRepository.class);
-        TradeRepository tradeRepository = mock(TradeRepository.class);
-
-        OrderServiceImpl orderService = new OrderServiceImpl(
-                orderRepository,
-                assetRepository,
-                userRepository,
-                walletRepository,
-                currentUserService,
-                portfolioRepository,
-                tradeRepository
-        );
-
         User currentUser = User.builder()
+                .id(1L)
                 .email("current@gmail.com")
                 .build();
 
         User orderOwner = User.builder()
+                .id(2L)
                 .email("owner@gmail.com")
                 .build();
 
@@ -763,25 +646,8 @@ class OrderServiceTest {
     @Test
     void shouldRejectCancellingExecutedOrder() {
 
-        OrderRepository orderRepository = mock(OrderRepository.class);
-        AssetRepository assetRepository = mock(AssetRepository.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        WalletRepository walletRepository = mock(WalletRepository.class);
-        CurrentUserService currentUserService = mock(CurrentUserService.class);
-        PortfolioRepository portfolioRepository = mock(PortfolioRepository.class);
-        TradeRepository tradeRepository = mock(TradeRepository.class);
-
-        OrderServiceImpl orderService = new OrderServiceImpl(
-                orderRepository,
-                assetRepository,
-                userRepository,
-                walletRepository,
-                currentUserService,
-                portfolioRepository,
-                tradeRepository
-        );
-
         User user = User.builder()
+                .id(1L)
                 .email("test@gmail.com")
                 .build();
 
@@ -829,24 +695,6 @@ class OrderServiceTest {
     @Test
     void shouldRejectExecutionWhenOrderDoesNotExist() {
 
-        OrderRepository orderRepository = mock(OrderRepository.class);
-        AssetRepository assetRepository = mock(AssetRepository.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        WalletRepository walletRepository = mock(WalletRepository.class);
-        CurrentUserService currentUserService = mock(CurrentUserService.class);
-        PortfolioRepository portfolioRepository = mock(PortfolioRepository.class);
-        TradeRepository tradeRepository = mock(TradeRepository.class);
-
-        OrderServiceImpl orderService = new OrderServiceImpl(
-                orderRepository,
-                assetRepository,
-                userRepository,
-                walletRepository,
-                currentUserService,
-                portfolioRepository,
-                tradeRepository
-        );
-
         when(orderRepository.findById(999L))
                 .thenReturn(Optional.empty());
 
@@ -869,24 +717,6 @@ class OrderServiceTest {
     @Test
     void shouldRejectCancellationWhenOrderDoesNotExist() {
 
-        OrderRepository orderRepository = mock(OrderRepository.class);
-        AssetRepository assetRepository = mock(AssetRepository.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        WalletRepository walletRepository = mock(WalletRepository.class);
-        CurrentUserService currentUserService = mock(CurrentUserService.class);
-        PortfolioRepository portfolioRepository = mock(PortfolioRepository.class);
-        TradeRepository tradeRepository = mock(TradeRepository.class);
-
-        OrderServiceImpl orderService = new OrderServiceImpl(
-                orderRepository,
-                assetRepository,
-                userRepository,
-                walletRepository,
-                currentUserService,
-                portfolioRepository,
-                tradeRepository
-        );
-
         when(orderRepository.findById(999L))
                 .thenReturn(Optional.empty());
 
@@ -908,25 +738,8 @@ class OrderServiceTest {
     @Test
     void shouldRejectSellOrderWhenQuantityIsInsufficient() {
 
-        OrderRepository orderRepository = mock(OrderRepository.class);
-        AssetRepository assetRepository = mock(AssetRepository.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        WalletRepository walletRepository = mock(WalletRepository.class);
-        CurrentUserService currentUserService = mock(CurrentUserService.class);
-        PortfolioRepository portfolioRepository = mock(PortfolioRepository.class);
-        TradeRepository tradeRepository = mock(TradeRepository.class);
-
-        OrderServiceImpl orderService = new OrderServiceImpl(
-                orderRepository,
-                assetRepository,
-                userRepository,
-                walletRepository,
-                currentUserService,
-                portfolioRepository,
-                tradeRepository
-        );
-
         User user = User.builder()
+                .id(1L)
                 .email("test@gmail.com")
                 .build();
 
@@ -987,25 +800,8 @@ class OrderServiceTest {
     @Test
     void shouldRejectSellOrderWhenPortfolioDoesNotExist() {
 
-        OrderRepository orderRepository = mock(OrderRepository.class);
-        AssetRepository assetRepository = mock(AssetRepository.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        WalletRepository walletRepository = mock(WalletRepository.class);
-        CurrentUserService currentUserService = mock(CurrentUserService.class);
-        PortfolioRepository portfolioRepository = mock(PortfolioRepository.class);
-        TradeRepository tradeRepository = mock(TradeRepository.class);
-
-        OrderServiceImpl orderService = new OrderServiceImpl(
-                orderRepository,
-                assetRepository,
-                userRepository,
-                walletRepository,
-                currentUserService,
-                portfolioRepository,
-                tradeRepository
-        );
-
         User user = User.builder()
+                .id(1L)
                 .email("test@gmail.com")
                 .build();
 
@@ -1055,5 +851,4 @@ class OrderServiceTest {
         verify(orderRepository, never()).save(any());
         verify(portfolioRepository, never()).save(any());
     }
-
 }

@@ -2,6 +2,7 @@ package com.aryan.tradewise_backend.order.service.impl;
 
 import com.aryan.tradewise_backend.market.entity.Asset;
 import com.aryan.tradewise_backend.market.repository.AssetRepository;
+import com.aryan.tradewise_backend.market.service.MarketPriceService;
 import com.aryan.tradewise_backend.order.dto.CreateOrderRequest;
 import com.aryan.tradewise_backend.order.dto.OrderResponse;
 import com.aryan.tradewise_backend.order.entity.Order;
@@ -34,6 +35,7 @@ public class OrderServiceImpl implements OrderService {
     private final CurrentUserService currentUserService;
     private final PortfolioRepository portfolioRepository;
     private final TradeRepository tradeRepository;
+    private final MarketPriceService marketPriceService;
 
     public OrderServiceImpl(
             OrderRepository orderRepository,
@@ -42,7 +44,8 @@ public class OrderServiceImpl implements OrderService {
             WalletRepository walletRepository,
             CurrentUserService currentUserService,
             PortfolioRepository portfolioRepository,
-            TradeRepository tradeRepository) {
+            TradeRepository tradeRepository,
+            MarketPriceService marketPriceService) {
 
         this.orderRepository = orderRepository;
         this.assetRepository = assetRepository;
@@ -51,6 +54,7 @@ public class OrderServiceImpl implements OrderService {
         this.currentUserService = currentUserService;
         this.portfolioRepository = portfolioRepository;
         this.tradeRepository = tradeRepository;
+        this.marketPriceService = marketPriceService;
     }
 
     @Transactional
@@ -266,13 +270,22 @@ public class OrderServiceImpl implements OrderService {
             throw new RuntimeException("Only pending orders can be executed");
         }
 
+        BigDecimal executionPrice =
+                marketPriceService.getPrice(
+                        order.getAsset().getSymbol()
+                );
+
+        if (executionPrice == null) {
+            throw new RuntimeException("Market price is not available");
+        }
+
         if (order.getOrderType() == OrderType.BUY) {
 
             Wallet wallet = walletRepository.findByUser(order.getUser())
                     .orElseThrow(() ->
                             new RuntimeException("Wallet not found"));
 
-            BigDecimal orderAmount = order.getPrice()
+            BigDecimal orderAmount = executionPrice
                     .multiply(order.getQuantity());
 
             // Remove money from locked balance
@@ -337,7 +350,7 @@ public class OrderServiceImpl implements OrderService {
                     .orElseThrow(() ->
                             new RuntimeException("Wallet not found"));
 
-            BigDecimal orderAmount = order.getPrice()
+            BigDecimal orderAmount = executionPrice
                     .multiply(order.getQuantity());
 
             wallet.setAvailableBalance(
@@ -354,7 +367,7 @@ public class OrderServiceImpl implements OrderService {
                 .asset(order.getAsset())
                 .orderType(order.getOrderType())
                 .quantity(order.getQuantity())
-                .executionPrice(order.getPrice())
+                .executionPrice(executionPrice)
                 .build();
 
         tradeRepository.save(trade);
