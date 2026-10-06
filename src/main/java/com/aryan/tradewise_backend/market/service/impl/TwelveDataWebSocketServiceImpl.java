@@ -3,6 +3,7 @@ package com.aryan.tradewise_backend.market.service.impl;
 import com.aryan.tradewise_backend.market.config.TwelveDataConfig;
 import com.aryan.tradewise_backend.market.dto.TwelveDataPriceResponse;
 import com.aryan.tradewise_backend.market.service.MarketPriceService;
+import com.aryan.tradewise_backend.market.service.MarketPriceWebSocketService;
 import com.aryan.tradewise_backend.market.service.TwelveDataWebSocketService;
 import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Service;
@@ -21,17 +22,18 @@ public class TwelveDataWebSocketServiceImpl
     private final TwelveDataConfig config;
     private final ObjectMapper objectMapper;
     private final MarketPriceService marketPriceService;
+    private final MarketPriceWebSocketService marketPriceWebSocketService;
 
     public TwelveDataWebSocketServiceImpl(
             TwelveDataConfig config,
             ObjectMapper objectMapper,
-            MarketPriceService marketPriceService) {
+            MarketPriceService marketPriceService,
+            MarketPriceWebSocketService marketPriceWebSocketService) {
 
         this.config = config;
         this.objectMapper = objectMapper;
         this.marketPriceService = marketPriceService;
-
-        System.out.println("TwelveDataWebSocketServiceImpl CREATED");
+        this.marketPriceWebSocketService = marketPriceWebSocketService;
     }
 
     @PostConstruct
@@ -109,6 +111,11 @@ public class TwelveDataWebSocketServiceImpl
                             if ("price".equals(response.getEvent())) {
 
                                 marketPriceService.updatePrice(
+                                        response.getSymbol(),
+                                        BigDecimal.valueOf(response.getPrice())
+                                );
+
+                                marketPriceWebSocketService.publishPrice(
                                         response.getSymbol(),
                                         BigDecimal.valueOf(response.getPrice())
                                 );
