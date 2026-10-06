@@ -81,7 +81,7 @@ public class TwelveDataWebSocketServiceImpl
             {
                 "action": "subscribe",
                 "params": {
-                    "symbols": "BTC/USD"
+                    "symbols": "BTC/USD,ETH/USD,AAPL,TSLA,MSFT"
                 }
             }
             """;
