@@ -114,6 +114,12 @@
 			<artifactId>spring-boot-starter-websocket</artifactId>
 		</dependency>
 
+		<dependency>
+			<groupId>com.openai</groupId>
+			<artifactId>openai-java</artifactId>
+			<version>4.76.0</version>
+		</dependency>
+
 
 
 	</dependencies>
