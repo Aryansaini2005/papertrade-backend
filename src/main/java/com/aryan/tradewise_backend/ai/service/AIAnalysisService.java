@@ -1,13 +1,12 @@
-package com.aryan.tradewise_backend.ai.service;
+
+        package com.aryan.tradewise_backend.ai.service;
 
 import com.aryan.tradewise_backend.ai.dto.AIAnalysisResponse;
-
-import java.math.BigDecimal;
+import com.aryan.tradewise_backend.ai.dto.TechnicalAnalysisResponse;
 
 public interface AIAnalysisService {
 
     AIAnalysisResponse analyzeStock(
-            String symbol,
-            BigDecimal currentPrice
+            TechnicalAnalysisResponse technicalAnalysis
     );
 }

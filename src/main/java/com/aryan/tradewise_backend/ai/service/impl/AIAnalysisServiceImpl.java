@@ -1,14 +1,13 @@
 package com.aryan.tradewise_backend.ai.service.impl;
 
 import com.aryan.tradewise_backend.ai.dto.AIAnalysisResponse;
+import com.aryan.tradewise_backend.ai.dto.TechnicalAnalysisResponse;
 import com.aryan.tradewise_backend.ai.service.AIAnalysisService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
 import org.springframework.stereotype.Service;
-
-import java.math.BigDecimal;
 
 @Service
 public class AIAnalysisServiceImpl implements AIAnalysisService {
@@ -26,42 +25,51 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
 
     @Override
     public AIAnalysisResponse analyzeStock(
-            String symbol,
-            BigDecimal currentPrice) {
+            TechnicalAnalysisResponse technicalAnalysis) {
 
         String prompt = """
                 You are the AI analysis assistant for TradeWise,
                 an educational paper-trading platform.
 
-                Stock symbol: %s
-                Current market price: %s
+                Analyze the following market data:
 
-                Available evidence is limited to this symbol and price.
-                Do not invent historical data, news, technical indicators,
-                or financial facts.
+                Symbol: %s
+                Current price: %s
+                SMA 20: %s
+                SMA 50: %s
+                Price change percentage: %s
+                Trend: %s
 
                 Return ONLY valid JSON with these fields:
                 {
                   "recommendation": "BUY, HOLD, or SELL",
-                  "reasoning": "Explain the evidence and its limitations",
+                  "reasoning": "Explain the evidence and limitations",
                   "probability": 0,
                   "riskLevel": "LOW, MEDIUM, or HIGH",
                   "analysis": "Detailed educational analysis"
                 }
 
                 Rules:
-                - probability must be a number from 0 to 100.
-                - probability means your subjective confidence in the
-                  recommendation, NOT the probability of profit.
-                - Because only one price is available, explicitly mention
-                  that there is insufficient evidence to predict price
-                  direction reliably.
-                - Do not imply that a recommendation is statistically
-                  validated.
-                - Do not guarantee returns.
+                - probability must be between 0 and 100.
+                - It represents subjective confidence in the recommendation,
+                  NOT the probability of profit.
+                - Treat missing indicators as unavailable, not zero.
+                - Use only the supplied data; do not invent news or prices.
+                - Explain how the indicators support or contradict the
+                  recommendation.
+                - A trend indicator alone is not enough to guarantee
+                  a profitable trade.
+                - Clearly explain uncertainty and relevant risks.
                 - This is educational paper-trading analysis, not
                   financial advice.
-                """.formatted(symbol, currentPrice);
+                """.formatted(
+                technicalAnalysis.getSymbol(),
+                technicalAnalysis.getCurrentPrice(),
+                technicalAnalysis.getSma20(),
+                technicalAnalysis.getSma50(),
+                technicalAnalysis.getPriceChangePercent(),
+                technicalAnalysis.getTrend()
+        );
 
         ResponseCreateParams params = ResponseCreateParams.builder()
                 .model("gpt-5-mini")
@@ -90,8 +98,8 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
                     );
 
             return new AIAnalysisResponse(
-                    symbol,
-                    currentPrice,
+                    technicalAnalysis.getSymbol(),
+                    technicalAnalysis.getCurrentPrice(),
                     aiResponse.getRecommendation(),
                     aiResponse.getReasoning(),
                     aiResponse.getProbability(),
