@@ -1,4 +1,3 @@
-
 package com.aryan.tradewise_backend.ai.dto;
 
 import lombok.AllArgsConstructor;
@@ -23,4 +22,9 @@ public class AIAnalysisResponse {
     private String riskLevel;
 
     private String analysis;
+
+    private String holdingPeriod;
+
+    private String invalidationCondition;
 }
+

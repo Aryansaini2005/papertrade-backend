@@ -8,6 +8,7 @@ import com.aryan.tradewise_backend.market.service.TechnicalIndicators;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.Collections;
 import java.util.List;
 
 @Service
@@ -30,23 +31,35 @@ public class TechnicalAnalysisServiceImpl
             String symbol,
             BigDecimal currentPrice) {
 
-        HistoricalPriceResponse history =
-                historicalPriceService.getHistoricalPrices(
-                        symbol,
-                        "1day"
-                );
-
         List<HistoricalPriceResponse.Candle> candles =
-                history.getValues();
+                Collections.emptyList();
 
-        BigDecimal sma20 =
-                technicalIndicators.calculateSMA(candles, 20);
+        try {
+            HistoricalPriceResponse history =
+                    historicalPriceService.getHistoricalPrices(
+                            symbol,
+                            "1day"
+                    );
 
-        BigDecimal sma50 =
-                technicalIndicators.calculateSMA(candles, 50);
+            if (history != null && history.getValues() != null) {
+                candles = history.getValues();
+            }
 
-        BigDecimal priceChangePercent =
-                technicalIndicators.calculatePriceChangePercent(candles);
+        } catch (RuntimeException exception) {
+            // Historical data is unavailable.
+            // Continue with current price and unavailable indicators.
+        }
+
+        BigDecimal sma20 = null;
+        BigDecimal sma50 = null;
+        BigDecimal priceChangePercent = null;
+
+        if (!candles.isEmpty()) {
+            sma20 = technicalIndicators.calculateSMA(candles, 20);
+            sma50 = technicalIndicators.calculateSMA(candles, 50);
+            priceChangePercent =
+                    technicalIndicators.calculatePriceChangePercent(candles);
+        }
 
         String trend = "INSUFFICIENT_DATA";
 
