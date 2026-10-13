@@ -41,9 +41,9 @@ public class AIAnalysisController {
     public ResponseEntity<AIAnalysisResponse> analyzeStock(
             @PathVariable String symbol) {
 
+        // 1. Normalize and validate the symbol
         String normalizedSymbol = symbol.trim().toUpperCase();
 
-        // 1. Validate symbol format
         if (!normalizedSymbol.matches("[A-Z0-9]+(/[A-Z0-9]+)?")) {
             return ResponseEntity.badRequest().build();
         }
@@ -57,27 +57,24 @@ public class AIAnalysisController {
             return ResponseEntity.notFound().build();
         }
 
-        // 3. Return cached analysis if available
-        AIAnalysisResponse cachedAnalysis =
-                aiCacheService.getAnalysis(normalizedSymbol);
-
-        if (cachedAnalysis != null) {
-            BigDecimal latestPrice =
-                    marketPriceService.getPrice(normalizedSymbol);
-
-            if (latestPrice != null
-                    && latestPrice.compareTo(
-                    cachedAnalysis.getCurrentPrice()) == 0) {
-                return ResponseEntity.ok(cachedAnalysis);
-            }
-        }
-
-        // 4. Get the latest market price
+        // 3. Read the latest market price once
         BigDecimal currentPrice =
                 marketPriceService.getPrice(normalizedSymbol);
 
         if (currentPrice == null) {
             return ResponseEntity.notFound().build();
+        }
+
+        // 4. Reuse cached analysis only when its price matches
+        AIAnalysisResponse cachedAnalysis =
+                aiCacheService.getAnalysis(normalizedSymbol);
+
+        if (cachedAnalysis != null
+                && cachedAnalysis.getCurrentPrice() != null
+                && currentPrice.compareTo(
+                cachedAnalysis.getCurrentPrice()) == 0) {
+
+            return ResponseEntity.ok(cachedAnalysis);
         }
 
         // 5. Calculate technical indicators
@@ -87,7 +84,7 @@ public class AIAnalysisController {
                         currentPrice
                 );
 
-        // 6. Generate AI analysis
+        // 6. Generate fresh AI analysis
         AIAnalysisResponse analysis =
                 aiAnalysisService.analyzeStock(technicalAnalysis);
 

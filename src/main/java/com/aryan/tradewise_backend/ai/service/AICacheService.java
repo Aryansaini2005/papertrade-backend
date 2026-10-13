@@ -7,4 +7,5 @@ public interface AICacheService {
     AIAnalysisResponse getAnalysis(String symbol);
 
     void saveAnalysis(String symbol, AIAnalysisResponse analysis);
+    void evictAnalysis(String symbol);
 }

@@ -1,5 +1,6 @@
 package com.aryan.tradewise_backend.common.exception;
 
+import com.aryan.tradewise_backend.ai.exception.AIServiceException;
 import com.aryan.tradewise_backend.common.response.ErrorResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -84,6 +85,23 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(response);
+    }
+
+
+    @ExceptionHandler(AIServiceException.class)
+    public ResponseEntity<ErrorResponse> handleAIServiceException(
+            AIServiceException ex) {
+
+        ErrorResponse response = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_GATEWAY.value())
+                .error("AI Service Unavailable")
+                .message("AI analysis is temporarily unavailable. Please try again later.")
+                .build();
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_GATEWAY)
                 .body(response);
     }
 }

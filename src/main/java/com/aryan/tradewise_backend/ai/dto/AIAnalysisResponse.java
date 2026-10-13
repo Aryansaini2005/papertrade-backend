@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 @Data
 @AllArgsConstructor
@@ -26,5 +27,6 @@ public class AIAnalysisResponse {
     private String holdingPeriod;
 
     private String invalidationCondition;
-}
 
+    private LocalDateTime generatedAt;
+}

@@ -2,17 +2,24 @@ package com.aryan.tradewise_backend.ai.service.impl;
 
 import com.aryan.tradewise_backend.ai.dto.AIAnalysisResponse;
 import com.aryan.tradewise_backend.ai.dto.TechnicalAnalysisResponse;
+import com.aryan.tradewise_backend.ai.exception.AIServiceException;
 import com.aryan.tradewise_backend.ai.service.AIAnalysisService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.Set;
 
 @Service
 public class AIAnalysisServiceImpl implements AIAnalysisService {
+
+    private static final Logger log =
+            LoggerFactory.getLogger(AIAnalysisServiceImpl.class);
 
     private final OpenAIClient openAIClient;
     private final ObjectMapper objectMapper;
@@ -89,29 +96,44 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
                 .input(prompt)
                 .build();
 
-        Response response = openAIClient.responses().create(params);
+        Response response;
 
-        String json = response.output().stream()
-                .flatMap(item -> item.message().stream())
-                .flatMap(message -> message.content().stream())
-                .flatMap(content -> content.outputText().stream())
-                .findFirst()
-                .map(outputText -> outputText.text())
-                .orElseThrow(() ->
-                        new IllegalStateException(
-                                "OpenAI returned no analysis"
-                        )
-                );
+        // Call OpenAI
+        try {
+            response = openAIClient.responses().create(params);
+        } catch (Exception e) {
+            log.error("OpenAI request failed", e);
 
-        // Remove optional Markdown code fences.
-        json = json.trim();
-
-        if (json.startsWith("```")) {
-            json = json.replaceFirst("^```(?:json)?\\s*", "");
-            json = json.replaceFirst("\\s*```$", "");
+            throw new AIServiceException(
+                    "Failed to generate AI stock analysis",
+                    e
+            );
         }
 
+        // Extract text from the response
+        String json;
+
         try {
+            json = response.output().stream()
+                    .flatMap(item -> item.message().stream())
+                    .flatMap(message -> message.content().stream())
+                    .flatMap(content -> content.outputText().stream())
+                    .findFirst()
+                    .map(outputText -> outputText.text())
+                    .orElseThrow(() ->
+                            new IllegalStateException(
+                                    "OpenAI returned no analysis"
+                            )
+                    );
+
+            // Remove optional Markdown code fences.
+            json = json.trim();
+
+            if (json.startsWith("```")) {
+                json = json.replaceFirst("^```(?:json)?\\s*", "");
+                json = json.replaceFirst("\\s*```$", "");
+            }
+
             AIAnalysisResponse aiResponse =
                     objectMapper.readValue(
                             json,
@@ -129,12 +151,15 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
                     aiResponse.getRiskLevel(),
                     aiResponse.getAnalysis(),
                     aiResponse.getHoldingPeriod(),
-                    aiResponse.getInvalidationCondition()
+                    aiResponse.getInvalidationCondition(),
+                    LocalDateTime.now()
             );
 
         } catch (Exception e) {
-            throw new IllegalStateException(
-                    "Failed to parse or validate AI analysis response",
+            log.error("Failed to parse or validate AI response", e);
+
+            throw new AIServiceException(
+                    "OpenAI returned an invalid analysis response",
                     e
             );
         }
