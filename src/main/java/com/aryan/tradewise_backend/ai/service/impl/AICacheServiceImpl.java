@@ -87,6 +87,7 @@ public class AICacheServiceImpl implements AICacheService {
         }
     }
 
+
     private boolean isValidCachedAnalysis(AIAnalysisResponse response) {
         return response != null
                 && response.getSymbol() != null
@@ -100,6 +101,9 @@ public class AICacheServiceImpl implements AICacheService {
                 && response.getHoldingPeriod() != null
                 && response.getInvalidationCondition() != null
                 && !response.getInvalidationCondition().isBlank()
+                && response.getDisclaimer() != null
+                && !response.getDisclaimer().isBlank()
+                && response.getGeneratedAt() != null
                 && Double.isFinite(response.getProbability())
                 && response.getProbability() >= 0
                 && response.getProbability() <= 100;

@@ -11,22 +11,14 @@ import java.time.LocalDateTime;
 public class AIAnalysisResponse {
 
     private String symbol;
-
     private BigDecimal currentPrice;
-
     private String recommendation;
-
     private String reasoning;
-
     private double probability;
-
     private String riskLevel;
-
     private String analysis;
-
     private String holdingPeriod;
-
     private String invalidationCondition;
-
+    private String disclaimer;
     private LocalDateTime generatedAt;
 }

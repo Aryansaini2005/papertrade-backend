@@ -1,35 +1,37 @@
 package com.aryan.tradewise_backend.ai.service.impl;
 
 import com.aryan.tradewise_backend.ai.dto.AIAnalysisResponse;
+import com.aryan.tradewise_backend.ai.dto.AIModelAnalysis;
 import com.aryan.tradewise_backend.ai.dto.TechnicalAnalysisResponse;
 import com.aryan.tradewise_backend.ai.exception.AIServiceException;
 import com.aryan.tradewise_backend.ai.service.AIAnalysisService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
-import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
+import com.openai.models.responses.StructuredResponseCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
 import java.util.Set;
 
 @Service
 public class AIAnalysisServiceImpl implements AIAnalysisService {
 
+    private static final String FINANCIAL_DISCLAIMER =
+            "This analysis is for educational paper-trading purposes only "
+                    + "and is not financial advice. AI confidence is subjective "
+                    + "and does not represent the probability of profit. "
+                    + "Market conditions can change, and losses are possible.";
+
     private static final Logger log =
             LoggerFactory.getLogger(AIAnalysisServiceImpl.class);
 
     private final OpenAIClient openAIClient;
-    private final ObjectMapper objectMapper;
 
-    public AIAnalysisServiceImpl(
-            OpenAIClient openAIClient,
-            ObjectMapper objectMapper) {
-
+    public AIAnalysisServiceImpl(OpenAIClient openAIClient) {
         this.openAIClient = openAIClient;
-        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -49,39 +51,25 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
                 Trend: %s
 
                 Data interpretation rules:
-                - A value of null means unavailable; it does not mean zero.
-                - Do not calculate missing indicators from insufficient data.
-                - Distinguish observed market data from interpretations.
-                - If key data is missing, lower confidence and explain
-                  the limitation.
-
-                Return ONLY valid JSON with these fields:
-                {
-                  "recommendation": "BUY, HOLD, or SELL",
-                  "reasoning": "Evidence supporting the recommendation",
-                  "probability": 0,
-                  "riskLevel": "LOW, MEDIUM, or HIGH",
-                  "analysis": "Detailed educational analysis",
-                  "holdingPeriod": "SHORT_TERM, MEDIUM_TERM, or LONG_TERM",
-                  "invalidationCondition": "Condition that would weaken or invalidate the analysis"
-                }
-
-                Rules:
-                - Probability must be between 0 and 100.
-                - Probability represents subjective model confidence,
-                  NOT the probability of profit.
-                - Treat missing indicators as unavailable, not zero.
-                - Do not invent prices, news, or market indicators.
+                - A null value means unavailable, not zero.
+                - Do not invent missing prices, indicators, or news.
+                - Distinguish observed data from interpretations.
                 - Explain uncertainty and relevant risks.
+
+                Analysis rules:
+                - recommendation must be BUY, HOLD, or SELL.
+                - riskLevel must be LOW, MEDIUM, or HIGH.
+                - holdingPeriod must be SHORT_TERM, MEDIUM_TERM,
+                  or LONG_TERM.
+                - probability must be between 0 and 100.
+                - probability is subjective model confidence,
+                  NOT the probability of profit.
+                - If evidence is insufficient, prefer HOLD and explain why.
                 - Do not invent precise entry prices, targets, or stop-losses.
-                - If the evidence is insufficient, prefer HOLD and explain why.
-                - Choose a holding period only as an educational analysis
-                  horizon; do not imply certainty about future price movement.
-                - Make the invalidation condition evidence-based. If there
-                  is insufficient evidence, say that more data is needed.
+                - Explain a condition that could invalidate the analysis.
                 - Never guarantee returns.
-                - This is educational paper-trading analysis, not
-                  financial advice.
+                - This is educational paper-trading analysis,
+                  not financial advice.
                 """.formatted(
                 technicalAnalysis.getSymbol(),
                 technicalAnalysis.getCurrentPrice(),
@@ -91,57 +79,58 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
                 technicalAnalysis.getTrend()
         );
 
-        ResponseCreateParams params = ResponseCreateParams.builder()
-                .model("gpt-5-mini")
-                .input(prompt)
-                .build();
-
-        Response response;
-
-        // Call OpenAI
-        try {
-            response = openAIClient.responses().create(params);
-        } catch (Exception e) {
-            log.error("OpenAI request failed", e);
-
-            throw new AIServiceException(
-                    "Failed to generate AI stock analysis",
-                    e
-            );
-        }
-
-        // Extract text from the response
-        String json;
+        // Derive the required JSON schema from AIModelAnalysis.
+        StructuredResponseCreateParams<AIModelAnalysis> params =
+                ResponseCreateParams.builder()
+                        .model("gpt-5-mini")
+                        .input(prompt)
+                        .text(AIModelAnalysis.class)
+                        .build();
 
         try {
-            json = response.output().stream()
+            var response = openAIClient.responses().create(params);
+
+            // The SDK provides structured output as AIModelAnalysis.
+            AIModelAnalysis aiResponse = response.output().stream()
                     .flatMap(item -> item.message().stream())
                     .flatMap(message -> message.content().stream())
                     .flatMap(content -> content.outputText().stream())
                     .findFirst()
-                    .map(outputText -> outputText.text())
                     .orElseThrow(() ->
                             new IllegalStateException(
                                     "OpenAI returned no analysis"
                             )
                     );
 
-            // Remove optional Markdown code fences.
-            json = json.trim();
-
-            if (json.startsWith("```")) {
-                json = json.replaceFirst("^```(?:json)?\\s*", "");
-                json = json.replaceFirst("\\s*```$", "");
-            }
-
-            AIAnalysisResponse aiResponse =
-                    objectMapper.readValue(
-                            json,
-                            AIAnalysisResponse.class
-                    );
-
             validateAIResponse(aiResponse);
 
+            // Normalize enum-like values for consistent API responses.
+            aiResponse.setRecommendation(
+                    aiResponse.getRecommendation().trim().toUpperCase(Locale.ROOT)
+            );
+
+            aiResponse.setRiskLevel(
+                    aiResponse.getRiskLevel().trim().toUpperCase(Locale.ROOT)
+            );
+
+            aiResponse.setHoldingPeriod(
+                    aiResponse.getHoldingPeriod().trim().toUpperCase(Locale.ROOT)
+            );
+
+
+            if (aiResponse.getProbability() < 40
+                    && !"HOLD".equals(aiResponse.getRecommendation())) {
+
+                aiResponse.setRecommendation("HOLD");
+
+                aiResponse.setReasoning(
+                        aiResponse.getReasoning()
+                                + " The recommendation was changed to HOLD because "
+                                + "the model's subjective confidence score was below 40."
+                );
+            }
+
+            // These fields are controlled by our backend.
             return new AIAnalysisResponse(
                     technicalAnalysis.getSymbol(),
                     technicalAnalysis.getCurrentPrice(),
@@ -152,21 +141,25 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
                     aiResponse.getAnalysis(),
                     aiResponse.getHoldingPeriod(),
                     aiResponse.getInvalidationCondition(),
+                    FINANCIAL_DISCLAIMER,
                     LocalDateTime.now()
             );
-
         } catch (Exception e) {
-            log.error("Failed to parse or validate AI response", e);
+            log.error("AI analysis generation failed", e);
+
+            if (e instanceof AIServiceException aiException) {
+                throw aiException;
+            }
 
             throw new AIServiceException(
-                    "OpenAI returned an invalid analysis response",
+                    "Failed to generate a valid AI stock analysis",
                     e
             );
         }
     }
 
-    private void validateAIResponse(AIAnalysisResponse response) {
 
+    private void validateAIResponse(AIModelAnalysis response) {
         if (response == null) {
             throw new IllegalStateException(
                     "AI returned an empty response"
@@ -174,39 +167,24 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
         }
 
         if (response.getRecommendation() == null
-                || !Set.of("BUY", "HOLD", "SELL")
-                .contains(
-                        response.getRecommendation()
-                                .trim()
-                                .toUpperCase()
-                )) {
+                || !Set.of("BUY", "HOLD", "SELL").contains(
+                response.getRecommendation().trim().toUpperCase(Locale.ROOT))) {
             throw new IllegalStateException(
                     "AI returned an invalid recommendation"
             );
         }
 
         if (response.getRiskLevel() == null
-                || !Set.of("LOW", "MEDIUM", "HIGH")
-                .contains(
-                        response.getRiskLevel()
-                                .trim()
-                                .toUpperCase()
-                )) {
+                || !Set.of("LOW", "MEDIUM", "HIGH").contains(
+                response.getRiskLevel().trim().toUpperCase(Locale.ROOT))) {
             throw new IllegalStateException(
                     "AI returned an invalid risk level"
             );
         }
 
         if (response.getHoldingPeriod() == null
-                || !Set.of(
-                "SHORT_TERM",
-                "MEDIUM_TERM",
-                "LONG_TERM"
-        ).contains(
-                response.getHoldingPeriod()
-                        .trim()
-                        .toUpperCase()
-        )) {
+                || !Set.of("SHORT_TERM", "MEDIUM_TERM", "LONG_TERM").contains(
+                response.getHoldingPeriod().trim().toUpperCase(Locale.ROOT))) {
             throw new IllegalStateException(
                     "AI returned an invalid holding period"
             );
@@ -227,8 +205,18 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
                 || response.getInvalidationCondition() == null
                 || response.getInvalidationCondition().isBlank()) {
             throw new IllegalStateException(
-                    "AI response is missing required analysis fields"
+                    "AI response is missing required fields"
             );
         }
+
+        if (response.getReasoning().length() > 2000
+                || response.getAnalysis().length() > 5000
+                || response.getInvalidationCondition().length() > 1000) {
+            throw new IllegalStateException(
+                    "AI response contains text exceeding the allowed limits"
+            );
+        }
+
+
     }
 }

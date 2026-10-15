@@ -5,6 +5,8 @@ import com.aryan.tradewise_backend.ai.service.TechnicalAnalysisService;
 import com.aryan.tradewise_backend.market.dto.HistoricalPriceResponse;
 import com.aryan.tradewise_backend.market.service.HistoricalPriceService;
 import com.aryan.tradewise_backend.market.service.TechnicalIndicators;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -14,6 +16,9 @@ import java.util.List;
 @Service
 public class TechnicalAnalysisServiceImpl
         implements TechnicalAnalysisService {
+
+    private static final Logger log =
+            LoggerFactory.getLogger(TechnicalAnalysisServiceImpl.class);
 
     private final HistoricalPriceService historicalPriceService;
     private final TechnicalIndicators technicalIndicators;
@@ -46,8 +51,12 @@ public class TechnicalAnalysisServiceImpl
             }
 
         } catch (RuntimeException exception) {
-            // Historical data is unavailable.
-            // Continue with current price and unavailable indicators.
+            log.warn(
+                    "Historical data unavailable for {}. "
+                            + "Continuing with unavailable indicators.",
+                    symbol,
+                    exception
+            );
         }
 
         BigDecimal sma20 = null;

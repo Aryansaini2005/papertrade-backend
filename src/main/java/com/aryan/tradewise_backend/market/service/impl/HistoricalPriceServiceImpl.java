@@ -3,6 +3,7 @@ package com.aryan.tradewise_backend.market.service.impl;
 import com.aryan.tradewise_backend.market.config.TwelveDataConfig;
 import com.aryan.tradewise_backend.market.dto.HistoricalPriceResponse;
 import com.aryan.tradewise_backend.market.service.HistoricalPriceService;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 
@@ -14,8 +15,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 
 @Service
-public class HistoricalPriceServiceImpl
-        implements HistoricalPriceService {
+public class HistoricalPriceServiceImpl implements HistoricalPriceService {
 
     private final TwelveDataConfig config;
     private final ObjectMapper objectMapper;
@@ -24,7 +24,6 @@ public class HistoricalPriceServiceImpl
     public HistoricalPriceServiceImpl(
             TwelveDataConfig config,
             ObjectMapper objectMapper) {
-
         this.config = config;
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newHttpClient();
@@ -41,12 +40,16 @@ public class HistoricalPriceServiceImpl
                     StandardCharsets.UTF_8
             );
 
-            String url =
-                    "https://api.twelvedata.com/time_series"
-                            + "?symbol=" + encodedSymbol
-                            + "&interval=" + interval
-                            + "&outputsize=60"
-                            + "&apikey=" + config.getApiKey();
+            String encodedInterval = URLEncoder.encode(
+                    interval,
+                    StandardCharsets.UTF_8
+            );
+
+            String url = "https://api.twelvedata.com/time_series"
+                    + "?symbol=" + encodedSymbol
+                    + "&interval=" + encodedInterval
+                    + "&outputsize=60"
+                    + "&apikey=" + config.getApiKey();
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -65,24 +68,46 @@ public class HistoricalPriceServiceImpl
                 );
             }
 
-            HistoricalPriceResponse historicalResponse =
-                    objectMapper.readValue(
-                            response.body(),
-                            HistoricalPriceResponse.class
-                    );
+            // Parse the body first to detect provider-level errors,
+            // including errors returned with HTTP 200.
+            JsonNode root = objectMapper.readTree(response.body());
 
-            if (historicalResponse.getValues() == null
-                    || historicalResponse.getValues().isEmpty()) {
+            if ("error".equalsIgnoreCase(
+                    root.path("status").asText())) {
+                String providerMessage =
+                        root.path("message").asText("Unknown provider error");
+
+                throw new IllegalStateException(
+                        "Twelve Data error: " + providerMessage
+                );
+            }
+
+            // A valid response should contain historical candle values.
+            JsonNode values = root.path("values");
+
+            if (!values.isArray() || values.isEmpty()) {
                 throw new IllegalStateException(
                         "No historical prices returned for " + symbol
                 );
             }
 
-            return historicalResponse;
+            return objectMapper.treeToValue(
+                    root,
+                    HistoricalPriceResponse.class
+            );
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+
+            throw new IllegalStateException(
+                    "Historical price request was interrupted for " + symbol,
+                    e
+            );
 
         } catch (Exception e) {
             throw new IllegalStateException(
-                    "Failed to retrieve historical prices for " + symbol,
+                    "Failed to retrieve historical prices for " + symbol
+                            + ": " + e.getMessage(),
                     e
             );
         }
