@@ -7,12 +7,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 
 @Service
 public class HistoricalPriceServiceImpl implements HistoricalPriceService {
@@ -24,9 +26,13 @@ public class HistoricalPriceServiceImpl implements HistoricalPriceService {
     public HistoricalPriceServiceImpl(
             TwelveDataConfig config,
             ObjectMapper objectMapper) {
+
         this.config = config;
         this.objectMapper = objectMapper;
-        this.httpClient = HttpClient.newHttpClient();
+
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                .build();
     }
 
     @Override
@@ -53,6 +59,7 @@ public class HistoricalPriceServiceImpl implements HistoricalPriceService {
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(15))
                     .GET()
                     .build();
 
@@ -68,21 +75,18 @@ public class HistoricalPriceServiceImpl implements HistoricalPriceService {
                 );
             }
 
-            // Parse the body first to detect provider-level errors,
-            // including errors returned with HTTP 200.
             JsonNode root = objectMapper.readTree(response.body());
 
             if ("error".equalsIgnoreCase(
                     root.path("status").asText())) {
-                String providerMessage =
-                        root.path("message").asText("Unknown provider error");
 
                 throw new IllegalStateException(
-                        "Twelve Data error: " + providerMessage
+                        "Twelve Data error: "
+                                + root.path("message")
+                                .asText("Unknown provider error")
                 );
             }
 
-            // A valid response should contain historical candle values.
             JsonNode values = root.path("values");
 
             if (!values.isArray() || values.isEmpty()) {
@@ -91,10 +95,48 @@ public class HistoricalPriceServiceImpl implements HistoricalPriceService {
                 );
             }
 
-            return objectMapper.treeToValue(
-                    root,
-                    HistoricalPriceResponse.class
-            );
+            HistoricalPriceResponse history =
+                    objectMapper.treeToValue(
+                            root,
+                            HistoricalPriceResponse.class
+                    );
+
+            if (history.getValues() == null
+                    || history.getValues().isEmpty()) {
+
+                throw new IllegalStateException(
+                        "Historical response contains no candles for "
+                                + symbol
+                );
+            }
+
+            for (HistoricalPriceResponse.Candle candle
+                    : history.getValues()) {
+
+                if (candle == null
+                        || candle.getDatetime() == null
+                        || candle.getDatetime().isBlank()) {
+
+                    throw new IllegalStateException(
+                            "Historical response contains a candle "
+                                    + "without a datetime for " + symbol
+                    );
+                }
+
+                validatePositivePrice(
+                        candle.getOpen(), "open", symbol);
+
+                validatePositivePrice(
+                        candle.getHigh(), "high", symbol);
+
+                validatePositivePrice(
+                        candle.getLow(), "low", symbol);
+
+                validatePositivePrice(
+                        candle.getClose(), "close", symbol);
+            }
+
+            return history;
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -108,6 +150,35 @@ public class HistoricalPriceServiceImpl implements HistoricalPriceService {
             throw new IllegalStateException(
                     "Failed to retrieve historical prices for " + symbol
                             + ": " + e.getMessage(),
+                    e
+            );
+        }
+    }
+
+    private void validatePositivePrice(
+            String value,
+            String field,
+            String symbol) {
+
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException(
+                    "Historical candle has no " + field
+                            + " price for " + symbol
+            );
+        }
+
+        try {
+            if (new BigDecimal(value).signum() <= 0) {
+                throw new IllegalStateException(
+                        "Historical candle has an invalid " + field
+                                + " price for " + symbol
+                );
+            }
+
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException(
+                    "Historical candle has a malformed " + field
+                            + " price for " + symbol,
                     e
             );
         }

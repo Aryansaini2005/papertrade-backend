@@ -1,10 +1,11 @@
+
 package com.aryan.tradewise_backend.market.service;
 
 import com.aryan.tradewise_backend.market.dto.HistoricalPriceResponse;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.math.MathContext;
+import java.math.RoundingMode;
 import java.util.List;
 
 @Service
@@ -14,7 +15,9 @@ public class TechnicalIndicators {
             List<HistoricalPriceResponse.Candle> candles,
             int period) {
 
-        if (candles == null || candles.size() < period) {
+        if (candles == null
+                || period <= 0
+                || candles.size() < period) {
             return null;
         }
 
@@ -23,15 +26,20 @@ public class TechnicalIndicators {
         // Twelve Data usually returns newest candles first.
         // Use the most recent 'period' candles.
         for (int i = 0; i < period; i++) {
-            sum = sum.add(
-                    new BigDecimal(candles.get(i).getClose())
-            );
+            BigDecimal close = parseClose(candles.get(i));
+
+            // Reject the entire window if any close is invalid.
+            if (close == null) {
+                return null;
+            }
+
+            sum = sum.add(close);
         }
 
         return sum.divide(
                 BigDecimal.valueOf(period),
                 4,
-                java.math.RoundingMode.HALF_UP
+                RoundingMode.HALF_UP
         );
     }
 
@@ -42,20 +50,39 @@ public class TechnicalIndicators {
             return null;
         }
 
-        BigDecimal newestClose =
-                new BigDecimal(candles.get(0).getClose());
-
+        BigDecimal newestClose = parseClose(candles.get(0));
         BigDecimal oldestClose =
-                new BigDecimal(
-                        candles.get(candles.size() - 1).getClose()
-                );
+                parseClose(candles.get(candles.size() - 1));
 
-        if (oldestClose.compareTo(BigDecimal.ZERO) == 0) {
+        if (newestClose == null || oldestClose == null) {
             return null;
         }
 
         return newestClose.subtract(oldestClose)
                 .multiply(BigDecimal.valueOf(100))
-                .divide(oldestClose, MathContext.DECIMAL64);
+                .divide(
+                        oldestClose,
+                        4,
+                        RoundingMode.HALF_UP
+                );
+    }
+
+    private BigDecimal parseClose(
+            HistoricalPriceResponse.Candle candle) {
+
+        if (candle == null
+                || candle.getClose() == null
+                || candle.getClose().isBlank()) {
+            return null;
+        }
+
+        try {
+            BigDecimal close = new BigDecimal(candle.getClose());
+
+            return close.signum() > 0 ? close : null;
+
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 }

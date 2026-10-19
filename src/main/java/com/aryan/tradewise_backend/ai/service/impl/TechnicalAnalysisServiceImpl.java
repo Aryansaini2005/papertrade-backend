@@ -1,3 +1,4 @@
+
 package com.aryan.tradewise_backend.ai.service.impl;
 
 import com.aryan.tradewise_backend.ai.dto.TechnicalAnalysisResponse;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 public class TechnicalAnalysisServiceImpl
@@ -36,13 +38,28 @@ public class TechnicalAnalysisServiceImpl
             String symbol,
             BigDecimal currentPrice) {
 
+        if (symbol == null || symbol.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Symbol must not be blank"
+            );
+        }
+
+        if (currentPrice == null || currentPrice.signum() <= 0) {
+            throw new IllegalArgumentException(
+                    "Current market price must be positive"
+            );
+        }
+
+        String normalizedSymbol =
+                symbol.trim().toUpperCase(Locale.ROOT);
+
         List<HistoricalPriceResponse.Candle> candles =
                 Collections.emptyList();
 
         try {
             HistoricalPriceResponse history =
                     historicalPriceService.getHistoricalPrices(
-                            symbol,
+                            normalizedSymbol,
                             "1day"
                     );
 
@@ -54,7 +71,7 @@ public class TechnicalAnalysisServiceImpl
             log.warn(
                     "Historical data unavailable for {}. "
                             + "Continuing with unavailable indicators.",
-                    symbol,
+                    normalizedSymbol,
                     exception
             );
         }
@@ -70,12 +87,36 @@ public class TechnicalAnalysisServiceImpl
                     technicalIndicators.calculatePriceChangePercent(candles);
         }
 
+        // Log each missing indicator independently.
+        if (sma20 == null) {
+            log.warn(
+                    "SMA20 unavailable for {}: at least 20 valid candles are required.",
+                    normalizedSymbol
+            );
+        }
+
+        if (sma50 == null) {
+            log.warn(
+                    "SMA50 unavailable for {}: at least 50 valid candles are required.",
+                    normalizedSymbol
+            );
+        }
+
+        if (priceChangePercent == null) {
+            log.warn(
+                    "Price change percentage unavailable for {}.",
+                    normalizedSymbol
+            );
+        }
+
         String trend = "INSUFFICIENT_DATA";
 
-        if (sma20 != null && currentPrice != null) {
-            if (currentPrice.compareTo(sma20) > 0) {
+        if (sma20 != null) {
+            int comparison = currentPrice.compareTo(sma20);
+
+            if (comparison > 0) {
                 trend = "ABOVE_SMA20";
-            } else if (currentPrice.compareTo(sma20) < 0) {
+            } else if (comparison < 0) {
                 trend = "BELOW_SMA20";
             } else {
                 trend = "AT_SMA20";
@@ -83,7 +124,7 @@ public class TechnicalAnalysisServiceImpl
         }
 
         return new TechnicalAnalysisResponse(
-                symbol,
+                normalizedSymbol,
                 currentPrice,
                 sma20,
                 sma50,

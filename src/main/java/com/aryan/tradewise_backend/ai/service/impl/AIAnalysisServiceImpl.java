@@ -1,3 +1,4 @@
+
 package com.aryan.tradewise_backend.ai.service.impl;
 
 import com.aryan.tradewise_backend.ai.dto.AIAnalysisResponse;
@@ -19,14 +20,28 @@ import java.util.Set;
 @Service
 public class AIAnalysisServiceImpl implements AIAnalysisService {
 
+    private static final Logger log =
+            LoggerFactory.getLogger(AIAnalysisServiceImpl.class);
+
     private static final String FINANCIAL_DISCLAIMER =
             "This analysis is for educational paper-trading purposes only "
                     + "and is not financial advice. AI confidence is subjective "
                     + "and does not represent the probability of profit. "
                     + "Market conditions can change, and losses are possible.";
 
-    private static final Logger log =
-            LoggerFactory.getLogger(AIAnalysisServiceImpl.class);
+    private static final Set<String> VALID_RECOMMENDATIONS =
+            Set.of("BUY", "HOLD", "SELL");
+
+    private static final Set<String> VALID_RISK_LEVELS =
+            Set.of("LOW", "MEDIUM", "HIGH");
+
+    private static final Set<String> VALID_HOLDING_PERIODS =
+            Set.of("SHORT_TERM", "MEDIUM_TERM", "LONG_TERM");
+
+    private static final int MAX_REASONING_LENGTH = 2000;
+    private static final int MAX_ANALYSIS_LENGTH = 5000;
+    private static final int MAX_INVALIDATION_LENGTH = 1000;
+    private static final double LOW_CONFIDENCE_THRESHOLD = 40.0;
 
     private final OpenAIClient openAIClient;
 
@@ -37,6 +52,12 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
     @Override
     public AIAnalysisResponse analyzeStock(
             TechnicalAnalysisResponse technicalAnalysis) {
+
+        validateTechnicalAnalysis(technicalAnalysis);
+
+        String symbol = technicalAnalysis.getSymbol()
+                .trim()
+                .toUpperCase(Locale.ROOT);
 
         String prompt = """
                 You are the AI analysis assistant for TradeWise,
@@ -51,27 +72,26 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
                 Trend: %s
 
                 Data interpretation rules:
-                - A null value means unavailable, not zero.
-                - Do not invent missing prices, indicators, or news.
-                - Distinguish observed data from interpretations.
-                - Explain uncertainty and relevant risks.
+                - A null value means the data is unavailable, not zero.
+                - Do not invent missing prices, indicators, historical data, or news.
+                - Do not claim to have accessed news or other sources that were not provided.
+                - Distinguish observed market data from your interpretation.
+                - If historical indicators are unavailable, explicitly acknowledge this limitation.
+                - If evidence is insufficient, prefer HOLD and explain why.
 
                 Analysis rules:
                 - recommendation must be BUY, HOLD, or SELL.
                 - riskLevel must be LOW, MEDIUM, or HIGH.
-                - holdingPeriod must be SHORT_TERM, MEDIUM_TERM,
-                  or LONG_TERM.
+                - holdingPeriod must be SHORT_TERM, MEDIUM_TERM, or LONG_TERM.
                 - probability must be between 0 and 100.
-                - probability is subjective model confidence,
-                  NOT the probability of profit.
-                - If evidence is insufficient, prefer HOLD and explain why.
-                - Do not invent precise entry prices, targets, or stop-losses.
+                - probability is subjective model confidence, NOT the probability of profit.
+                - Do not treat subjective confidence as a statistically validated prediction.
+                - Do not invent precise entry prices, price targets, or stop-losses.
                 - Explain a condition that could invalidate the analysis.
                 - Never guarantee returns.
-                - This is educational paper-trading analysis,
-                  not financial advice.
+                - This is educational paper-trading analysis, not financial advice.
                 """.formatted(
-                technicalAnalysis.getSymbol(),
+                symbol,
                 technicalAnalysis.getCurrentPrice(),
                 technicalAnalysis.getSma20(),
                 technicalAnalysis.getSma50(),
@@ -79,60 +99,97 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
                 technicalAnalysis.getTrend()
         );
 
-        // Derive the required JSON schema from AIModelAnalysis.
-        StructuredResponseCreateParams<AIModelAnalysis> params =
-                ResponseCreateParams.builder()
-                        .model("gpt-5-mini")
-                        .input(prompt)
-                        .text(AIModelAnalysis.class)
-                        .build();
-
         try {
+            StructuredResponseCreateParams<AIModelAnalysis> params =
+                    ResponseCreateParams.builder()
+                            .model("gpt-5-mini")
+                            .input(prompt)
+                            .text(AIModelAnalysis.class)
+                            .build();
+
             var response = openAIClient.responses().create(params);
 
-            // The SDK provides structured output as AIModelAnalysis.
+            // Reject responses that did not finish successfully.
+            String responseStatus = response.status()
+                    .map(Object::toString)
+                    .orElse("unknown");
+
+            if (!"completed".equalsIgnoreCase(responseStatus)) {
+                throw new AIServiceException(
+                        "OpenAI did not complete the analysis",
+                        new IllegalStateException(
+                                "OpenAI response status: " + responseStatus
+                        )
+                );
+            }
+
+            // Extract the structured model output.
             AIModelAnalysis aiResponse = response.output().stream()
                     .flatMap(item -> item.message().stream())
                     .flatMap(message -> message.content().stream())
                     .flatMap(content -> content.outputText().stream())
                     .findFirst()
                     .orElseThrow(() ->
-                            new IllegalStateException(
-                                    "OpenAI returned no analysis"
+                            new AIServiceException(
+                                    "OpenAI returned no analysis",
+                                    new IllegalStateException(
+                                            "No structured analysis was returned"
+                                    )
                             )
                     );
 
             validateAIResponse(aiResponse);
 
-            // Normalize enum-like values for consistent API responses.
+            // Normalize enum-like fields.
             aiResponse.setRecommendation(
-                    aiResponse.getRecommendation().trim().toUpperCase(Locale.ROOT)
+                    aiResponse.getRecommendation()
+                            .trim()
+                            .toUpperCase(Locale.ROOT)
             );
 
             aiResponse.setRiskLevel(
-                    aiResponse.getRiskLevel().trim().toUpperCase(Locale.ROOT)
+                    aiResponse.getRiskLevel()
+                            .trim()
+                            .toUpperCase(Locale.ROOT)
             );
 
             aiResponse.setHoldingPeriod(
-                    aiResponse.getHoldingPeriod().trim().toUpperCase(Locale.ROOT)
+                    aiResponse.getHoldingPeriod()
+                            .trim()
+                            .toUpperCase(Locale.ROOT)
             );
 
-
-            if (aiResponse.getProbability() < 40
+            // Conservative product heuristic, not a validated trading strategy.
+            if (aiResponse.getProbability() < LOW_CONFIDENCE_THRESHOLD
                     && !"HOLD".equals(aiResponse.getRecommendation())) {
 
                 aiResponse.setRecommendation("HOLD");
 
-                aiResponse.setReasoning(
-                        aiResponse.getReasoning()
-                                + " The recommendation was changed to HOLD because "
-                                + "the model's subjective confidence score was below 40."
-                );
+                String confidenceNote =
+                        " Recommendation changed to HOLD because the model's "
+                                + "subjective confidence score was below 40.";
+
+                String reasoning = aiResponse.getReasoning();
+
+                int availableLength =
+                        MAX_REASONING_LENGTH - confidenceNote.length();
+
+                if (reasoning.length() + confidenceNote.length()
+                        <= MAX_REASONING_LENGTH) {
+
+                    aiResponse.setReasoning(reasoning + confidenceNote);
+
+                } else {
+                    aiResponse.setReasoning(
+                            reasoning.substring(0, availableLength)
+                                    + confidenceNote
+                    );
+                }
             }
 
-            // These fields are controlled by our backend.
+            // Identity, price, timestamp, and disclaimer remain backend-controlled.
             return new AIAnalysisResponse(
-                    technicalAnalysis.getSymbol(),
+                    symbol,
                     technicalAnalysis.getCurrentPrice(),
                     aiResponse.getRecommendation(),
                     aiResponse.getReasoning(),
@@ -144,20 +201,61 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
                     FINANCIAL_DISCLAIMER,
                     LocalDateTime.now()
             );
-        } catch (Exception e) {
-            log.error("AI analysis generation failed", e);
 
-            if (e instanceof AIServiceException aiException) {
-                throw aiException;
-            }
+        } catch (AIServiceException exception) {
+            log.error(
+                    "AI analysis failed for symbol {}",
+                    symbol,
+                    exception
+            );
+            throw exception;
+
+        } catch (Exception exception) {
+            log.error(
+                    "Unexpected failure generating AI analysis for symbol {}",
+                    symbol,
+                    exception
+            );
 
             throw new AIServiceException(
                     "Failed to generate a valid AI stock analysis",
-                    e
+                    exception
             );
         }
     }
 
+    private void validateTechnicalAnalysis(
+            TechnicalAnalysisResponse technicalAnalysis) {
+
+        if (technicalAnalysis == null) {
+            throw new AIServiceException(
+                    "Technical analysis data is required",
+                    new IllegalArgumentException(
+                            "technicalAnalysis must not be null"
+                    )
+            );
+        }
+
+        if (technicalAnalysis.getSymbol() == null
+                || technicalAnalysis.getSymbol().isBlank()) {
+            throw new AIServiceException(
+                    "A valid stock symbol is required",
+                    new IllegalArgumentException(
+                            "symbol must not be blank"
+                    )
+            );
+        }
+
+        if (technicalAnalysis.getCurrentPrice() == null
+                || technicalAnalysis.getCurrentPrice().signum() <= 0) {
+            throw new AIServiceException(
+                    "A valid current market price is required",
+                    new IllegalArgumentException(
+                            "currentPrice must be positive"
+                    )
+            );
+        }
+    }
 
     private void validateAIResponse(AIModelAnalysis response) {
         if (response == null) {
@@ -167,7 +265,7 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
         }
 
         if (response.getRecommendation() == null
-                || !Set.of("BUY", "HOLD", "SELL").contains(
+                || !VALID_RECOMMENDATIONS.contains(
                 response.getRecommendation().trim().toUpperCase(Locale.ROOT))) {
             throw new IllegalStateException(
                     "AI returned an invalid recommendation"
@@ -175,7 +273,7 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
         }
 
         if (response.getRiskLevel() == null
-                || !Set.of("LOW", "MEDIUM", "HIGH").contains(
+                || !VALID_RISK_LEVELS.contains(
                 response.getRiskLevel().trim().toUpperCase(Locale.ROOT))) {
             throw new IllegalStateException(
                     "AI returned an invalid risk level"
@@ -183,7 +281,7 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
         }
 
         if (response.getHoldingPeriod() == null
-                || !Set.of("SHORT_TERM", "MEDIUM_TERM", "LONG_TERM").contains(
+                || !VALID_HOLDING_PERIODS.contains(
                 response.getHoldingPeriod().trim().toUpperCase(Locale.ROOT))) {
             throw new IllegalStateException(
                     "AI returned an invalid holding period"
@@ -209,14 +307,13 @@ public class AIAnalysisServiceImpl implements AIAnalysisService {
             );
         }
 
-        if (response.getReasoning().length() > 2000
-                || response.getAnalysis().length() > 5000
-                || response.getInvalidationCondition().length() > 1000) {
+        if (response.getReasoning().length() > MAX_REASONING_LENGTH
+                || response.getAnalysis().length() > MAX_ANALYSIS_LENGTH
+                || response.getInvalidationCondition().length()
+                > MAX_INVALIDATION_LENGTH) {
             throw new IllegalStateException(
                     "AI response contains text exceeding the allowed limits"
             );
         }
-
-
     }
 }
